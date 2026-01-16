@@ -1,0 +1,46 @@
+# Dependency directories
+node_modules/
+*/node_modules/
+server/node_modules/
+client/node_modules/
+
+# Environment variables
+.env
+*.env
+.env.local
+
+# Builds
+dist/
+build/
+client/dist/
+*.exe
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Database & Storage
+*.db
+*.sqlite
+server/system.db
+server/system.db.bak
+server/uploads/
+server/local_storage/
+app/data/
+app/local_storage/
+
+# IDE
+.vscode/
+.idea/
+
+# Temp
+temp/
+tmp/
+debug_output.html
+excel_debug_log.txt

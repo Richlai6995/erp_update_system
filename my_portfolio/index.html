@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的個人介紹 | My Portfolio</title>
+    <meta name="description" content="簡單而精緻的個人介紹網頁">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Outfit:wght@300;400;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://kit.fontawesome.com/your-code.js" crossorigin="anonymous"></script>
+    <!-- Placeholder for FontAwesome if needed, using CSS shapes/SVG for now to be standalone/safe -->
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="logo">PORTFOLIO.</div>
+        <div class="nav-links">
+            <a href="#home">首頁</a>
+            <a href="#about">關於我</a>
+            <a href="#skills">技能</a>
+            <a href="#contact" class="btn-primary">聯絡我</a>
+        </div>
+    </nav>
+
+    <header id="home" class="hero">
+        <div class="container hero-content">
+            <div class="text-content">
+                <span class="greeting">Hello, world!</span>
+                <h1>我是 <span class="gradient-text">開發者</span> & <span class="gradient-text">設計師</span></h1>
+                <p>熱衷於打造極致的使用者體驗與高效能的網頁應用程式。<br>這是我的個人展示空間。</p>
+                <div class="cta-group">
+                    <a href="#contact" class="btn btn-primary">與我合作</a>
+                    <a href="#about" class="btn btn-outline">了解更多</a>
+                </div>
+            </div>
+            <div class="image-content">
+                <div class="blob-bg"></div>
+                <img src="./avatar.png" alt="Profile Avatar" class="profile-img">
+            </div>
+        </div>
+    </header>
+
+    <section id="about" class="section about">
+        <div class="container">
+            <h2 class="section-title">關於我</h2>
+            <div class="about-grid">
+                <div class="about-card">
+                    <h3>🔍 問題解決者</h3>
+                    <p>喜歡挑戰複雜的技術問題，並尋找最優雅的解決方案。</p>
+                </div>
+                <div class="about-card">
+                    <h3>🎨 創意發想</h3>
+                    <p>不僅會寫程式，更重視介面設計與使用者互動的細節。</p>
+                </div>
+                <div class="about-card">
+                    <h3>🚀 持續學習</h3>
+                    <p>緊跟技術潮流，不斷探索 React, AI, 雲端架構等新領域。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="skills" class="section skills">
+        <div class="container">
+            <h2 class="section-title">專業技能</h2>
+            <div class="skills-wrapper">
+                <div class="skill-category">
+                    <h3>前端開發</h3>
+                    <div class="skill-tags">
+                        <span>HTML5</span>
+                        <span>CSS3</span>
+                        <span>JavaScript (ES6+)</span>
+                        <span>React</span>
+                        <span>TypeScript</span>
+                        <span>Tailwind</span>
+                    </div>
+                </div>
+                <div class="skill-category">
+                    <h3>後端與工具</h3>
+                    <div class="skill-tags">
+                        <span>Node.js</span>
+                        <span>Python</span>
+                        <span>Git</span>
+                        <span>Docker</span>
+                        <span>Firebase</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer id="contact" class="footer">
+        <div class="container">
+            <h2>準備好開始新專案了嗎？</h2>
+            <p>歡迎隨時與我聯繫，討論您的想法。</p>
+            <a href="mailto:contact@example.com" class="btn btn-footer">發送郵件</a>
+
+            <div class="social-links">
+                <!-- Using simple text or SVG for social icons to avoid external font dependency issues if key is missing -->
+                <a href="#">GitHub</a>
+                <a href="#">LinkedIn</a>
+                <a href="#">Twitter</a>
+            </div>
+
+            <p class="copyright">&copy; 2024 My Portfolio. Designed & Built with ❤️.</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
