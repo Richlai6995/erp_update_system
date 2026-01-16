@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { DocViewer } from '../components/DocViewer';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { Button } from '../components/ui/Button';
-import { Plus, FileText, LogOut, Settings, User as UserIcon, List, FolderOpen, Search, X, Download } from 'lucide-react';
+import { Plus, FileText, LogOut, Settings, User as UserIcon, List, FolderOpen, Search, X, Download, Book as BookIcon } from 'lucide-react';
 import { Input } from '../components/ui/Input';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
@@ -26,6 +27,7 @@ export default function RequestList() {
     const [filter, setFilter] = useState('all');
     const [activeTab, setActiveTab] = useState<'requests' | 'files'>('requests');
     const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+    const [isDocViewerOpen, setIsDocViewerOpen] = useState(false);
 
     // Search Options State
     const [formIdOptions, setFormIdOptions] = useState<string[]>([]);
@@ -172,7 +174,7 @@ export default function RequestList() {
         const labels: any = {
             draft: '開立 (Open)',
             reviewing: '簽核中 (Reviewing)',
-            approved: '已審核 (Approved)',
+            approved: '已核准 (Approved)',
             online: '已上線 (Online)',
             manager_rejected: '主管退回 (Manager Rejected)',
             dba_rejected: 'DBA 退回 (DBA Rejected)',
@@ -208,6 +210,15 @@ export default function RequestList() {
                             <span>系統管理</span>
                         </button>
                     )}
+
+                    <button
+                        onClick={() => setIsDocViewerOpen(true)}
+                        className="flex items-center gap-2 text-sm text-slate-600 hover:text-brand-600 transition-colors mr-2"
+                        title="系統使用手冊"
+                    >
+                        <BookIcon size={18} />
+                        <span className="hidden md:inline">使用手冊</span>
+                    </button>
 
                     <button
                         onClick={logout}
@@ -446,6 +457,7 @@ export default function RequestList() {
                     </div>
                 )}
             </main>
+            <DocViewer isOpen={isDocViewerOpen} onClose={() => setIsDocViewerOpen(false)} />
         </div>
     );
 }

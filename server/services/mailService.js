@@ -314,8 +314,8 @@ function generateEmailHtml(request, files) {
     `;
 }
 
-// Notify Signer (Manager)
-async function sendSignerNotification(requestId, executorName) {
+// Notify Signer (Manager or Specific Approver)
+async function sendSignerNotification(requestId, executorName, nextApproverId = null) {
     const db = await dbWrapper.init();
     // Fetch detailed request info
     const request = db.prepare(`
@@ -333,10 +333,20 @@ async function sendSignerNotification(requestId, executorName) {
     const html = generateEmailHtml(request, files);
     const subject = `ERP程式更新[待簽核通知] 申請單: ${request.form_id} - ${request.module_code} (${request.applicant_name})`;
 
-    // Logic: Notify 'manager' role (Or Admin for testing)
-    const recipients = await getRecipientsByRole('manager');
+    let recipients = [];
+    if (nextApproverId) {
+        // Specific Approver (Flow-Based)
+        const approver = db.prepare('SELECT email FROM users WHERE id = ?').get(nextApproverId);
+        if (approver && approver.email) {
+            recipients.push(approver.email);
+        }
+    } else {
+        // Fallback: Notify 'manager' role (Legacy)
+        recipients = await getRecipientsByRole('manager');
+    }
+
     if (recipients.length === 0) {
-        console.warn('No Signer (Manager/Admin) recipients found.');
+        console.warn('No Signer recipients found.');
         return;
     }
 

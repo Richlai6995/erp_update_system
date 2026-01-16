@@ -268,6 +268,15 @@ function initSchema(db) {
     }
   } catch (e) { console.error("Migration has_tested failed:", e); }
 
+  // Add current_step to applications if not exists
+  try {
+    const appTableInfo = db.prepare("PRAGMA table_info(applications)").all();
+    const hasCurrentStep = appTableInfo.some(c => c.name === 'current_step');
+    if (!hasCurrentStep) {
+      db.exec("ALTER TABLE applications ADD COLUMN current_step INTEGER DEFAULT 1");
+    }
+  } catch (e) { console.error("Migration current_step failed:", e); }
+
   // Add db_object_type to application_files if not exists
   try {
     const tableInfo = db.prepare("PRAGMA table_info(application_files)").all();

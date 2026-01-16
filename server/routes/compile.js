@@ -33,8 +33,10 @@ router.post('/:id', verifyToken, async (req, res) => {
         if (!request) throw new Error('Request not found');
 
         // SECURITY: Ownership Check
-        // Allow applicant or admin to compile.
-        if (request.applicant_id !== req.user.id && req.user.role !== 'admin') {
+        console.log(`[Compile Debug] User: ${req.user.id}, Role: ${req.user.role}, Applicant: ${request.applicant_id}`);
+        // Allow applicant or admin/dba to compile.
+        if (request.applicant_id !== req.user.id && !['admin', 'dba'].includes(req.user.role)) {
+            console.log(`[Compile Debug] Permission Denied`);
             return res.status(403).json({ success: false, error: 'Unauthorized: You can only compile your own requests.' });
         }
 

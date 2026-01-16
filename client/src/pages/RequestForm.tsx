@@ -76,6 +76,7 @@ export default function RequestForm() {
 
     // New State for Checked
     const [hasTested, setHasTested] = useState(false);
+    const [canApprove, setCanApprove] = useState(false);
 
     // Inputs for Actions
     const [reviewComment, setReviewComment] = useState('');
@@ -122,6 +123,7 @@ export default function RequestForm() {
             setApplicantName(data.applicant_name);
             setApplyDate(data.apply_date);
             setHasTested(data.has_tested === 1);
+            setCanApprove(data.can_approve === true);
 
             if (data.status !== 'draft' && data.status !== 'manager_rejected' && data.status !== 'dba_rejected') setIsReadOnly(true);
             else setIsReadOnly(false);
@@ -621,7 +623,7 @@ export default function RequestForm() {
                                                     <button
                                                         onClick={async () => {
                                                             try {
-                                                                const token = localStorage.getItem('token');
+                                                                const token = sessionStorage.getItem('token');
                                                                 const res = await fetch(`/api/uploads/${file.id}/download`, { headers: { 'Authorization': `Bearer ${token}` } });
                                                                 if (res.ok) {
                                                                     const blob = await res.blob();
@@ -639,7 +641,7 @@ export default function RequestForm() {
                                                             <button
                                                                 onClick={async () => {
                                                                     try {
-                                                                        const token = localStorage.getItem('token');
+                                                                        const token = sessionStorage.getItem('token');
                                                                         const res = await fetch(`/api/uploads/${file.id}/download-backup`, { headers: { 'Authorization': `Bearer ${token}` } });
                                                                         if (res.ok) {
                                                                             const blob = await res.blob();
@@ -841,7 +843,7 @@ export default function RequestForm() {
                 )}
 
                 {/* Reviewer Action Area: Comment Input */}
-                {status === 'reviewing' && (user?.role === 'admin' || user?.role === 'manager') && (
+                {status === 'reviewing' && canApprove && (
                     <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg space-y-2">
                         <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
                             <Edit3 size={16} /> 簽核意見 (Review Comment)
@@ -899,7 +901,7 @@ export default function RequestForm() {
                         </>
                     )}
 
-                    {status === 'reviewing' && (user?.role === 'admin' || user?.role === 'manager') && (
+                    {status === 'reviewing' && canApprove && (
                         <>
                             <Button variant="danger" onClick={() => handleReviewAction('reject')} isLoading={isLoading}>
                                 <ThumbsDown size={16} className="mr-2" /> 退回 (Reject)

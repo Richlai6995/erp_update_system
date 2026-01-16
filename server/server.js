@@ -56,6 +56,7 @@ app.use('/api/erp-modules', require('./routes/erp'));
 app.use('/api/oracle', oracleRoutes); // Register Oracle Routes
 app.use('/api/mail', require('./routes/mail'));
 app.use('/api/file-browser', require('./routes/fileBrowser')); // New File Browser Route
+app.use('/api/docs', require('./routes/docs')); // New Documentation Route
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production' || true) { // Always serve for now as per setup

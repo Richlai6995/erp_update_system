@@ -148,11 +148,9 @@ router.post('/login', async (req, res) => {
     try {
         const db = require('../database').db;
 
-        // 1. Try LDAP First (Skip for ADMIN)
-        let isLdapTry = true;
-        if (username.toUpperCase() === 'ADMIN') {
-            isLdapTry = false;
-        }
+        // 1. Try LDAP First (For ALL users)
+        // We attempt LDAP for everyone. If it fails (connection or auth), we fall back to local DB.
+        const isLdapTry = true;
 
         if (isLdapTry) {
             try {
@@ -199,8 +197,8 @@ router.post('/login', async (req, res) => {
         }
 
         // 2. Fallback: Local DB Auth
-        // Case-sensitive check usually depends on DB collation, but simple query here
-        const user = db.prepare('SELECT * FROM users WHERE username = ? AND password = ?').get(username, password);
+        // Case-insensitive check for username
+        const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND password = ?').get(username, password);
 
         if (!user) {
             return res.status(401).json({ error: '帳號或密碼錯誤' });

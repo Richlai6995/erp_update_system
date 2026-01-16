@@ -17,8 +17,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const storedUser = localStorage.getItem('user');
-        const token = localStorage.getItem('token');
+        const storedUser = sessionStorage.getItem('user');
+        const token = sessionStorage.getItem('token');
 
         if (storedUser && token) {
             setUser(JSON.parse(storedUser));
@@ -27,8 +27,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const login = (token: string, userData: User) => {
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(userData));
+        sessionStorage.setItem('token', token);
+        sessionStorage.setItem('user', JSON.stringify(userData));
         setUser(userData);
     };
 
@@ -38,8 +38,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (e) {
             console.error(e);
         }
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         setUser(null);
     };
 

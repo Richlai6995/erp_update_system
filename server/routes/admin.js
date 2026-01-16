@@ -87,7 +87,8 @@ router.post('/settings/env', verifyToken, checkAdmin, (req, res) => {
 // --- DB Object Types Routes ---
 
 // GET /api/admin/settings/db-object-types
-router.get('/settings/db-object-types', verifyToken, checkAdmin, (req, res) => {
+// GET /api/admin/settings/db-object-types
+router.get('/settings/db-object-types', verifyToken, (req, res) => {
     try {
         const db = require('../database').db;
         const types = db.prepare('SELECT * FROM db_object_types ORDER BY name').all();

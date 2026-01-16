@@ -71,11 +71,13 @@ router.get('/export', verifyToken, async (req, res) => {
 
         const params = [];
 
-        // Role Filter
-        if (req.user.role === 'user') {
-            sql += ` AND a.applicant_id = ? `;
-            params.push(req.user.id);
-        }
+
+        // Role Filter - REMOVED to allow global visibility
+
+        // if (req.user.role === 'user') {
+        //     sql += ` AND a.applicant_id = ? `;
+        //     params.push(req.user.id);
+        // }
 
         // Search Filters
         if (status && status !== 'all') {
@@ -228,11 +230,13 @@ router.get('/', verifyToken, (req, res) => {
 
     const params = [];
 
-    // Filter by User Role (Basic Security)
-    if (req.user.role === 'user') {
-        sql += ` AND a.applicant_id = ? `;
-        params.push(req.user.id);
-    }
+
+    // Filter by User Role - REMOVED to allow global visibility
+
+    // if (req.user.role === 'user') {
+    //     sql += ` AND a.applicant_id = ? `;
+    //     params.push(req.user.id);
+    // }
 
     // --- Advanced Search filters ---
 
@@ -313,7 +317,33 @@ router.get('/:id', verifyToken, (req, res) => {
         const files = db.prepare(`SELECT * FROM application_files WHERE application_id = ? ORDER BY sequence ASC, uploaded_at ASC`).all(id);
         const reviews = db.prepare(`SELECT * FROM application_reviews WHERE application_id = ? ORDER BY reviewed_at DESC`).all(id);
 
-        res.json({ ...app, files, reviews });
+        let canApprove = false;
+
+        // Use applicant_department from 'u.department' or 'app.department'?
+        // The query selects 'a.*, u.name as applicant_name, u.department'.
+        // So it is accessible as 'app.department'.
+
+        if (app.status === 'reviewing') {
+            if (req.user.role === 'admin') {
+                canApprove = true;
+            } else if (app.department) {
+                const dept = db.prepare('SELECT id FROM departments WHERE name = ?').get(app.department);
+                if (dept) {
+                    const approvers = db.prepare('SELECT * FROM department_approvers WHERE department_id = ? ORDER BY step_order').all(dept.id);
+                    const currentStep = app.current_step || 1;
+
+                    const stepApprovers = approvers.filter(a => a.step_order === currentStep && a.active === 1);
+
+                    if (stepApprovers.some(a => a.user_id == req.user.id)) {
+                        canApprove = true;
+                    }
+                }
+            }
+        } else {
+            if (req.user.role === 'admin') canApprove = true;
+        }
+
+        res.json({ ...app, files, reviews, can_approve: canApprove });
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Failed to fetch request' });
@@ -410,26 +440,104 @@ router.put('/:id/status', verifyToken, async (req, res) => {
         let newStatus = app.status;
         let dbaComment = null;
 
+        const fs = require('fs');
+        const logPath = './debug_permission.txt';
+        const log = (msg) => fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
+
         if (action === 'submit') {
             // Security: Ownership
             if (app.applicant_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
 
             if (!['draft', 'manager_rejected', 'dba_rejected'].includes(app.status)) return res.status(400).json({ error: 'Cannot submit non-draft' });
             newStatus = 'reviewing'; // "審核中"
+
+            // Find Applicant's Department
+            // We have `app.applicant_department` (string name). We need ID for `department_approvers`.
+            const dept = db.prepare('SELECT id FROM departments WHERE name = ?').get(app.applicant_department);
+
+            if (!dept) {
+                // Should not happen if data integrity is good, but if dept name changed?
+                // Fallback: If Admin, allow. Else error.
+                if (req.user.role === 'admin') {
+                    // Admin bypass
+                } else {
+                    return res.status(400).json({ error: 'Applicant department system error' });
+                }
+            }
+
+            // Find Step 1 Approver
+            if (dept) {
+                const approvers = db.prepare('SELECT * FROM department_approvers WHERE department_id = ? ORDER BY step_order').all(dept.id);
+                // Step 1
+                const step1 = approvers.find(a => a.step_order === 1 && a.active === 1);
+                if (step1) {
+                    req.nextApproverId = step1.user_id;
+                }
+            }
         }
         else if (action === 'approve') {
-            // Security: Manager Role
-            if (req.user.role !== 'manager' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized: Managers only' });
+            // New Flow-Based Logic
 
-            // Security: Department Check (Prevent Cross-Department Approval)
-            // Allow admin to bypass
-            if (req.user.role !== 'admin' && req.user.department !== app.applicant_department) {
-                return res.status(403).json({ error: 'Unauthorized: You can only approve requests for your own department' });
+            // 1. Get Applicant Department ID
+            // We have `app.applicant_department` (string name). We need ID for `department_approvers`.
+            const dept = db.prepare('SELECT id FROM departments WHERE name = ?').get(app.applicant_department);
+
+            if (!dept) {
+                // Should not happen if data integrity is good, but if dept name changed?
+                // Fallback: If Admin, allow. Else error.
+                if (req.user.role === 'admin') {
+                    // Admin bypass
+                } else {
+                    return res.status(400).json({ error: 'Applicant department system error' });
+                }
+            }
+
+            // 2. Get Approvers
+            let approvers = [];
+            if (dept) {
+                approvers = db.prepare('SELECT * FROM department_approvers WHERE department_id = ? ORDER BY step_order').all(dept.id);
+            }
+
+            // 3. Determine Current Step (Default 1 if null)
+            let currentStep = app.current_step || 1;
+
+            // 4. Find Approver for Current Step
+            // There could be multiple approvers for same step? (Parallel?) 
+            // Current UI implies one per row, but let's filter by step.
+            const stepApprovers = approvers.filter(a => a.step_order === currentStep && a.active === 1);
+
+            // 5. Check Permission
+            const isApprover = stepApprovers.some(a => a.user_id === req.user.id);
+
+            // Allow Admin to bypass permission check, BUT logic still needs to flow steps
+            if (!isApprover && req.user.role !== 'admin') {
+                return res.status(403).json({ error: 'Unauthorized: You are not the approver for this step' });
             }
 
             if (app.status !== 'reviewing') return res.status(400).json({ error: 'Request is not in reviewing status' });
 
-            newStatus = 'approved';
+            // 6. Transition
+            // Check if there is a next step
+            // Find max step
+            const maxStep = approvers.length > 0 ? Math.max(...approvers.map(a => a.step_order)) : 0;
+
+            if (currentStep < maxStep) {
+                // Move to next step
+                // Update current_step + 1
+                db.prepare('UPDATE applications SET current_step = ? WHERE id = ?').run(currentStep + 1, id);
+                // Status remains 'reviewing'
+                newStatus = 'reviewing';
+
+                // Notify NEXT approver
+                const nextStep = currentStep + 1;
+                const nextApprover = approvers.find(a => a.step_order === nextStep && a.active === 1);
+                if (nextApprover) {
+                    req.nextApproverId = nextApprover.user_id;
+                }
+            } else {
+                // Final Step -> Move to Approved (DBA)
+                newStatus = 'approved';
+            }
         }
         else if (action === 'reject') {
             // Security: Manager Role (for Reviewing) or DBA (for Approved) or Admin
@@ -490,14 +598,20 @@ router.put('/:id/status', verifyToken, async (req, res) => {
             const mailService = require('../services/mailService');
 
             if (action === 'submit') {
-                // Notify Signer (Manager)
-                await mailService.sendSignerNotification(id, req.user.name);
+                // Notify Signer (Manager/Approver)
+                // We passed req.nextApproverId if found
+                await mailService.sendSignerNotification(id, req.user.name, req.nextApproverId);
             }
             else if (action === 'approve') {
                 // Determine if this was the final approval -> Notify DBA
                 // In this simplified flow: Draft -> Submitted -> Approved -> Online
                 // "Approve" moves it to 'approved' status, which is the queue for DBA.
                 // So yes, notify DBA.
+
+                // If status is still reviewing, it means we moved to next step. Notify next signer.
+                if (newStatus === 'reviewing' && req.nextApproverId) {
+                    await mailService.sendSignerNotification(id, req.user.name, req.nextApproverId);
+                }
 
                 // Double check status is 'approved'
                 if (newStatus === 'approved') {

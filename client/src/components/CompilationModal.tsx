@@ -41,7 +41,7 @@ export default function CompilationModal({ isOpen, onClose, requestId, files, on
         setLogs([{ timestamp: new Date().toLocaleTimeString(), message: 'Starting compilation...', type: 'info' }]);
 
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const res = await fetch(`/api/compile/${requestId}`, {
                 method: 'POST',
                 headers: {
@@ -88,8 +88,8 @@ export default function CompilationModal({ isOpen, onClose, requestId, files, on
                             <Terminal size={20} className="text-purple-600" />
                         </div>
                         <div>
-                            <h3 className="font-semibold text-lg">Remote Compilation</h3>
-                            <p className="text-xs text-slate-500">Compiles .fmb (Form) or .pll (Library) files on ERP Server</p>
+                            <h3 className="font-semibold text-lg">遠端編譯 (Remote Compilation)</h3>
+                            <p className="text-xs text-slate-500">於 ERP 主機執行 .fmb (Form) 或 .pll (Library) 編譯作業</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
@@ -104,7 +104,7 @@ export default function CompilationModal({ isOpen, onClose, requestId, files, on
                         <Alert variant="destructive">
                             <AlertCircle className="h-4 w-4" />
                             <AlertDescription>
-                                No compilable files (.fmb or .pll) found in this request.
+                                此申請單中未發現可編譯的檔案 (.fmb 或 .pll)。
                             </AlertDescription>
                         </Alert>
                     )}
@@ -113,7 +113,7 @@ export default function CompilationModal({ isOpen, onClose, requestId, files, on
                     <div className="flex-1 bg-slate-950 rounded-lg p-4 font-mono text-sm overflow-y-auto min-h-[300px]">
                         {logs.length === 0 && (
                             <div className="text-slate-500 italic text-center mt-20">
-                                Ready to compile. Click detailed button below.
+                                準備就緒，請點擊下方按鈕開始編譯。
                             </div>
                         )}
                         {logs.map((log, idx) => (
@@ -132,9 +132,9 @@ export default function CompilationModal({ isOpen, onClose, requestId, files, on
                 {/* Footer */}
                 <div className="px-6 py-4 border-t bg-slate-50 flex justify-between items-center rounded-b-lg">
                     <div className="flex gap-2 items-center">
-                        {status === 'compiling' && <span className="text-xs text-blue-600 animate-pulse">Running compilation tasks...</span>}
-                        {status === 'success' && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle size={14} /> Success</span>}
-                        {status === 'error' && <span className="text-xs text-red-600 flex items-center gap-1"><AlertCircle size={14} /> Failed</span>}
+                        {status === 'compiling' && <span className="text-xs text-blue-600 animate-pulse">正在執行編譯作業...</span>}
+                        {status === 'success' && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle size={14} /> 編譯完成 (Success)</span>}
+                        {status === 'error' && <span className="text-xs text-red-600 flex items-center gap-1"><AlertCircle size={14} /> 編譯失敗 (Failed)</span>}
                     </div>
 
                     <div className="flex gap-3">
@@ -142,7 +142,7 @@ export default function CompilationModal({ isOpen, onClose, requestId, files, on
                             onClick={onClose}
                             className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
                         >
-                            Close
+                            關閉
                         </button>
 
                         {(status === 'idle' || status === 'error' || status === 'success') && hasCompilableFiles && (
@@ -152,7 +152,7 @@ export default function CompilationModal({ isOpen, onClose, requestId, files, on
                                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {status === 'idle' ? <Play size={16} /> : <RefreshCw size={16} />}
-                                {status === 'idle' ? 'Start Compilation' : 'Re-Compile'}
+                                {status === 'idle' ? '開始編譯 (Compile)' : '重新編譯 (Re-Compile)'}
                             </button>
                         )}
                     </div>
