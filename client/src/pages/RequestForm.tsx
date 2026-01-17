@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../lib/api';
 import { Button } from '../components/ui/Button';
@@ -86,7 +87,14 @@ export default function RequestForm() {
     const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
     const [isCompileModalOpen, setIsCompileModalOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+
     const [isReadOnly, setIsReadOnly] = useState(false);
+
+    // AI Analysis State
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [aiResult, setAiResult] = useState('');
+    const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+    const [selectedAiModel, setSelectedAiModel] = useState('gemini-3-flash-preview');
 
     useEffect(() => {
         fetchBasicSettings();
@@ -330,6 +338,69 @@ export default function RequestForm() {
         }
     };
 
+    // AI Analysis Handler
+    const handleAiAnalysis = async () => {
+        // Collect files to analyze
+        // Priority: New Files get analyzed. If no new files, analyze existing files.
+
+        const newSqlFiles = newFiles.filter(f => {
+            const ext = f.file.name.split('.').pop()?.toLowerCase();
+            return ['sql', 'txt'].includes(ext || '');
+        });
+
+        const existingSqlFiles = existingFiles.filter(f => {
+            const ext = f.original_name.split('.').pop()?.toLowerCase();
+            return ['sql', 'txt'].includes(ext || ''); // Check extension of existing files
+        });
+
+        if (newSqlFiles.length === 0 && existingSqlFiles.length === 0) {
+            return alert('請先新增或是擁有 SQL 檔案以進行分析 (Please add or have SQL files first)');
+        }
+
+        setIsAnalyzing(true);
+        setIsAiModalOpen(true); // Open modal with loading state
+        setAiResult('正在分析中... (Analyzing...)');
+
+        const formData = new FormData();
+
+        // Append New Files
+        newSqlFiles.forEach(item => {
+            formData.append('files', item.file);
+        });
+
+        // Append Existing File Paths
+        // Append Existing File Metadata (Path + Original Name)
+        const existingMetadata = existingSqlFiles.map(f => ({
+            path: f.file_path,
+            name: f.original_name // Use the display name!
+        })).filter(f => f.path); // Ensure path exists
+
+        if (existingMetadata.length > 0) {
+            formData.append('existingFilesMetadata', JSON.stringify(existingMetadata));
+        }
+
+        // Append Model Selection
+        formData.append('model', selectedAiModel);
+
+        try {
+            const res = await api.post('/ai/analyze-sql', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+
+            if (res.data.success) {
+                setAiResult(res.data.analysis);
+            } else {
+                setAiResult('分析失敗: ' + res.data.error);
+            }
+        } catch (e: any) {
+            console.error(e);
+            setAiResult('分析發生錯誤: ' + (e.response?.data?.error || e.message));
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
+
     const handleCopyRequest = async () => {
         if (!copyFormId) return alert('請選擇單據');
         setIsLoading(true);
@@ -406,6 +477,30 @@ export default function RequestForm() {
 
     return (
         <div className="max-w-4xl mx-auto p-6 pb-32">
+            {/* AI Analysis Modal */}
+            <Modal
+                isOpen={isAiModalOpen}
+                onClose={() => setIsAiModalOpen(false)}
+                title="AI SQL 分析結果 (Gemini)"
+                className="max-w-4xl"
+            >
+                <div className="space-y-4">
+                    {isAnalyzing ? (
+                        <div className="flex flex-col items-center justify-center p-8 text-slate-500">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600 mb-2"></div>
+                            <p>正在分析 SQL 語法與安全性...</p>
+                        </div>
+                    ) : (
+                        <div className="prose prose-sm max-w-none bg-slate-50 p-4 rounded-lg border border-slate-200 overflow-y-auto max-h-[60vh]">
+                            <ReactMarkdown>{aiResult}</ReactMarkdown>
+                        </div>
+                    )}
+                    <div className="flex justify-end">
+                        <Button variant="secondary" onClick={() => setIsAiModalOpen(false)}>關閉</Button>
+                    </div>
+                </div>
+            </Modal>
+
             <div className="flex justify-between items-center mb-4">
                 <Button variant="ghost" onClick={() => navigate('/requests')}>
                     <ArrowLeft size={16} className="mr-2" /> 返回列表
@@ -513,11 +608,31 @@ export default function RequestForm() {
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
                         <h3 className="font-semibold text-slate-800">程式檔案 (Files)</h3>
-                        {!isReadOnly && (
-                            <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
-                                <Upload size={16} className="mr-2" /> 新增檔案
-                            </Button>
-                        )}
+                        <div className="flex gap-2 items-center">
+                            {/* AI Analysis Section: Visible for Edit OR Reviewer (canApprove) OR Admin/DBA */}
+                            {(!isReadOnly || canApprove || (status !== 'online' && status !== 'void' && ['admin', 'dba'].includes(user?.role || ''))) && (
+                                <>
+                                    <select
+                                        className="h-8 text-sm border-slate-300 rounded-md shadow-sm focus:border-purple-300 focus:ring focus:ring-purple-200 focus:ring-opacity-50"
+                                        value={selectedAiModel}
+                                        onChange={(e) => setSelectedAiModel(e.target.value)}
+                                    >
+                                        <option value="gemini-3-flash-preview">Gemini 3.0 Flash</option>
+                                        <option value="gemini-3-pro-preview">Gemini 3.0 Pro</option>
+                                    </select>
+                                    <Button variant="secondary" size="sm" onClick={handleAiAnalysis} className="text-purple-600 border-purple-200 hover:bg-purple-50">
+                                        <MessageSquare size={16} className="mr-2" /> AI SQL 分析
+                                    </Button>
+                                </>
+                            )}
+
+                            {/* New File Upload: Only for Edit Mode */}
+                            {!isReadOnly && (
+                                <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
+                                    <Upload size={16} className="mr-2" /> 新增檔案 (New)
+                                </Button>
+                            )}
+                        </div>
                         <input type="file" ref={fileInputRef} multiple className="hidden" onChange={handleFileSelect} />
                     </div>
 

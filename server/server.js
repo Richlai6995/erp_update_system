@@ -14,8 +14,10 @@ const PORT = process.env.PORT || 3003;
 
 // Security Middleware
 app.use(helmet({
-    contentSecurityPolicy: false, // Disable default CSP to avoid breaking React dev scripts/images
-    crossOriginEmbedderPolicy: false
+    contentSecurityPolicy: false, // Disable default CSP
+    crossOriginEmbedderPolicy: false, // Allow external resources
+    crossOriginOpenerPolicy: false, // Disable COOP (fixes warnings on HTTP)
+    originAgentCluster: false // Disable Origin-Agent-Cluster (fixes warnings on HTTP)
 }));
 
 // Rate Limiting
@@ -40,6 +42,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Debug Middleware: Log all requests
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
+
 // Routes
 app.use('/api/auth', require('./routes/auth').router);
 app.use('/api/users', require('./routes/users'));
@@ -57,6 +65,8 @@ app.use('/api/erp-modules', require('./routes/erp'));
 app.use('/api/oracle', oracleRoutes); // Register Oracle Routes
 app.use('/api/mail', require('./routes/mail'));
 app.use('/api/file-browser', require('./routes/fileBrowser')); // New File Browser Route
+console.log('Registering /api/ai routes...');
+app.use('/api/ai', require('./routes/ai')); // New AI Analysis Route
 app.use('/api/docs', require('./routes/docs')); // New Documentation Route
 
 // Serve static files in production
