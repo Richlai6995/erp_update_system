@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const db = require('./database');
 const oracleRoutes = require('./routes/oracle'); // Added for new route
 
@@ -9,7 +10,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3003;
 
 // Security Middleware
 app.use(helmet({
@@ -59,11 +60,20 @@ app.use('/api/file-browser', require('./routes/fileBrowser')); // New File Brows
 app.use('/api/docs', require('./routes/docs')); // New Documentation Route
 
 // Serve static files in production
-if (process.env.NODE_ENV === 'production' || true) { // Always serve for now as per setup
-    app.use(express.static(path.join(__dirname, '../client/dist')));
+if (process.env.NODE_ENV === 'production' || true) {
+    const publicPath = fs.existsSync(path.join(__dirname, 'public'))
+        ? path.join(__dirname, 'public')
+        : path.join(__dirname, '../client/dist');
+
+    app.use(express.static(publicPath));
 
     app.get('*', (req, res) => {
-        res.sendFile(path.resolve(__dirname, '../client/dist', 'index.html'));
+        const indexPath = path.join(publicPath, 'index.html');
+        if (fs.existsSync(indexPath)) {
+            res.sendFile(indexPath);
+        } else {
+            res.status(404).send('Not Found');
+        }
     });
 }
 
@@ -81,8 +91,13 @@ db.init().then(() => {
     const scheduler = require('./services/scheduler');
     scheduler.init();
 
+    // Initialize Backup Service
+    const backupService = require('./services/backupService');
+    backupService.init();
+
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
+        console.log(`Access URL: ${process.env.APP_URL || `http://localhost:${PORT}`}`);
     });
 }).catch(err => {
     console.error("Failed to initialize database:", err);

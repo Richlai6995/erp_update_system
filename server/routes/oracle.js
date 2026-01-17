@@ -44,9 +44,9 @@ router.get('/test', verifyToken, async (req, res) => {
 
 // Auto Backup (Fetch DDL)
 router.post('/backup-ddl', verifyToken, async (req, res) => {
-    // Security: DBA/Admin only
-    const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
-    if (!isDBA && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+    // Allow all users to backup (required for application)
+    // const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
+    // if (!isDBA && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
 
     try {
         const { schemaName, objectName, objectType } = req.body;
@@ -71,9 +71,9 @@ router.post('/backup-ddl', verifyToken, async (req, res) => {
 
 // Manual Backup (Upload)
 router.post('/manual-backup', verifyToken, upload.single('file'), (req, res) => {
-    // Security: DBA/Admin only
-    const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
-    if (!isDBA && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+    // Allow all users to upload backup
+    // const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
+    // if (!isDBA && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
 
     try {
         if (!req.file) {
@@ -87,9 +87,9 @@ router.post('/manual-backup', verifyToken, upload.single('file'), (req, res) => 
 
 // Download Backup (From Temp or Final path?)
 router.get('/download', verifyToken, (req, res) => {
-    // Security: DBA/Admin only
-    const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
-    if (!isDBA && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+    // Allow all users to download backup
+    // const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
+    // if (!isDBA && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
 
     try {
         const { filePath } = req.query;
@@ -117,9 +117,9 @@ router.get('/download', verifyToken, (req, res) => {
 
 // Delete Backup (Temp)
 router.post('/delete', verifyToken, (req, res) => {
-    // Security: DBA/Admin only
-    const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
-    if (!isDBA && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
+    // Allow all users to delete temp backup
+    // const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
+    // if (!isDBA && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
 
     try {
         const { filePath } = req.body;

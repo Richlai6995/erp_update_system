@@ -1,0 +1,30 @@
+<svg width="600" height="400" xmlns="http://www.w3.org/2000/svg">
+  <!-- 天空背景 -->
+  <rect width="100%" height="100%" fill="#87CEEB" />
+  
+  <!-- 太陽 -->
+  <circle cx="500" cy="80" r="50" fill="#FFD700" stroke="#FFA500" stroke-width="3"/>
+  
+  <!-- 雲朵 1 -->
+  <g fill="#FFFFFF">
+    <circle cx="100" cy="100" r="30" />
+    <circle cx="140" cy="100" r="30" />
+    <circle cx="120" cy="80" r="30" />
+    <circle cx="160" cy="100" r="25" />
+  </g>
+
+  <!-- 雲朵 2 -->
+  <g fill="#FFFFFF">
+    <circle cx="300" cy="150" r="25" />
+    <circle cx="340" cy="150" r="25" />
+    <circle cx="320" cy="130" r="25" />
+  </g>
+
+  <!-- 草地 -->
+  <path d="M0 300 Q 150 280 300 300 T 600 300 V 400 H 0 Z" fill="#32CD32" />
+  
+  <!-- 早安文字 -->
+  <text x="50%" y="360" font-family="Arial, sans-serif" font-size="40" fill="white" text-anchor="middle" font-weight="bold" style="text-shadow: 2px 2px 4px #000000;">
+    Good Morning!
+  </text>
+</svg>

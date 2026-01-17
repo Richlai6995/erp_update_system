@@ -110,4 +110,53 @@
     *   此舉確保最早的備份檔不會被後續的重複操作覆蓋。
 
 ---
+## 7. 進階維護與故障排除
+
+### 7.1 變更系統設定注意事項 (System Settings)
+
+當您在「系統設定 > 環境變數 (Env)」修改參數 (如 LDAP 密碼、SMTP 設定、ERP 連線資訊) 並儲存後，系統會告知「請重新啟動後端伺服器」。
+
+這是因為 Node.js 服務是在啟動時讀取設定檔，此設定是注入到容器環境變數中。**修改後的參數必須重建容器才能生效**。
+
+**操作步驟：**
+1.  登入伺服器 Terminal。
+2.  進入專案目錄 (例如 `cd /path/to/erp_update_system`)。
+3.  執行重建指令 (此指令會讀取新的 .env 並重新建立容器)：
+    ```bash
+    docker compose up -d
+    ```
+4.  檢查日誌確認啟動成功：
+    ```bash
+    docker logs -f erp_update_system
+    ```
+
+### 7.2 清除所有申請單據 (Reset Requests)
+
+若需要**完全清除系統中的所有申請單** (例如測試完畢要建立乾淨的正式環境)，請使用專用的清除腳本 `reset_requests.js`。
+
+**警告：此操作不可逆，將會永久刪除所有申請單、附件與簽核紀錄。**
+
+**操作步驟：**
+
+1.  確認 `server/reset_requests.js` 檔案已存在於伺服器上 (若無，請將其複製到 `server/` 目錄)。
+2.  **進入 Docker 容器執行腳本** (確保直接操作資料庫)：
+    ```bash
+    # 1. 進入容器 Shell
+    docker exec -it erp_update_system /bin/sh
+
+    # 2. 執行清除程式 (請確保您知道自己在做什麼)
+    node server/reset_requests.js
+
+    # 若成功，螢幕將顯示 "[Cleaner] Data cleared successfully."
+    
+    # 3. 離開容器
+    exit
+    ```
+3.  **重啟容器 (非常重要)**：
+    因為資料庫是載入記憶體執行的，**清除後必須重啟容器**，Server 才會重新讀取乾淨的資料庫檔。
+    ```bash
+    docker compose restart
+    ```
+
+---
 **機密警語**：本手冊僅供內部使用，請勿外流。管理員操作涉及系統核心權限，執行刪除或佈署動作前請務必再次確認。

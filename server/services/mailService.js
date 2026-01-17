@@ -331,7 +331,7 @@ async function sendSignerNotification(requestId, executorName, nextApproverId = 
     const files = db.prepare(`SELECT * FROM application_files WHERE application_id = ?`).all(requestId);
 
     const html = generateEmailHtml(request, files);
-    const subject = `ERP程式更新[待簽核通知] 申請單: ${request.form_id} - ${request.module_code} (${request.applicant_name})`;
+    const subject = `ERP程式變更申請[待簽核通知] 申請單: ${request.form_id} - ${request.module_code} (${request.applicant_name})`;
 
     let recipients = [];
     if (nextApproverId) {
@@ -377,7 +377,7 @@ async function sendDBANotification(requestId, executorName) {
     const files = db.prepare(`SELECT * FROM application_files WHERE application_id = ?`).all(requestId);
 
     const html = generateEmailHtml(request, files);
-    const subject = `[待執行通知] 申請單: ${request.form_id} - 已核准 (${request.module_code})`;
+    const subject = `ERP程式變更申請[待執行通知] 申請單: ${request.form_id} - 已核准 (${request.module_code})`;
 
     // Logic: Notify users with 'dba' in role (Or Admin)
     const recipients = await getRecipientsByRole('dba');
@@ -417,13 +417,13 @@ async function sendApplicantNotification(requestId, type, comment) {
     let statusMsg = '';
 
     if (type === 'reject') {
-        subject = `[申請退回] 申請單: ${request.form_id} - ${request.module_code}`;
+        subject = `ERP程式變更申請[申請退回] 申請單: ${request.form_id} - ${request.module_code}`;
         statusMsg = `您的申請單已被退回。原因: ${comment || '無'}`;
     } else if (type === 'online') {
-        subject = `[已上線] 申請單: ${request.form_id} - ${request.module_code}`;
+        subject = `ERP程式變更申請[已上線] 申請單: ${request.form_id} - ${request.module_code}`;
         statusMsg = `您的申請單已完成並上線。備註: ${comment || '無'}`;
     } else {
-        subject = `[申請單通知] 申請單: ${request.form_id}`;
+        subject = `ERP程式變更申請[申請單通知] 申請單: ${request.form_id}`;
         statusMsg = `通知: ${comment || ''}`;
     }
 

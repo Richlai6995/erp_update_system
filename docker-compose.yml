@@ -1,38 +1,35 @@
 services:
   app:
     build: .
-    container_name: file_management_system
+    container_name: erp_update_system
     ports:
-      - "3002:3002"
+      - "3003:3003"
     volumes:
       # Database storage (Persist DB file)
-      - /mnt/e/file_managerment_container/data:/app/data
+      - /mnt/e/erp_update_system_container/data:/app/data
       # File storage (Persist uploads)
-      - /mnt/e/file_managerment_container/files:/app/local_storage
+      - /mnt/e/erp_update_system_container/files:/app/local_storage
       # Logs (Optional, good for debugging)
-      - /mnt/e/file_managerment_container/logs:/app/logs
+      - /mnt/e/erp_update_system_container/logs:/app/logs
       # Backups
-      - /mnt/e/backup_file/file_management_system_db:/app/backups
+      - /mnt/e/backup_file/erp_update_system_db:/app/backups
+      # Oracle Client (Thick Mode)
+      - /mnt/e/dify-docker-api/oracle-client/instantclient_19_26:/opt/oracle/instantclient_19_26
       # Mount source code for hot-reload / easy update
       - .:/app
       # Create anonymous volume for node_modules to utilize container's installed packages
       - /app/node_modules
     environment:
-      - PORT=3002
+      - PORT=3003
       - TZ=Asia/Taipei
       - NODE_ENV=production
       - DB_PATH=/app/data/system.db
       - FILES_ROOT_DIR=/app/local_storage
-      # Include other .env vars, but let's be explicit or use env_file if user has specific secrets
-      # Using env_file to pull in LDAP/Drive configs from server/.env if needed, 
-      # but usually we copy .env or set vars manually in deployment.
-      # User provided .env example in request but didn't ask to copy it.
-      # We will assume they might mount it or use env_file.
-      # Let's use env_file pointing to .env if it exists in root, or they can create it.
+      - FILES_DIR=/app/local_storage
+      - BACKUP_FILES_DIR=/app/backups
+      - APP_URL=http://10.8.93.211:3003
     env_file:
       - server/.env
     # Override default CMD because volume mount changes file structure
-    # Original Image: /app/server.js
-    # Volume Mount: /app/server/server.js
     command: node server/server.js
     restart: unless-stopped

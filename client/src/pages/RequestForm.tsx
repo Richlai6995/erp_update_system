@@ -657,7 +657,7 @@ export default function RequestForm() {
                                                             {file.backup_at && (
                                                                 <span className="text-[10px] text-blue-500 ml-1">
                                                                     備份: {new Date(file.backup_at).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-                                                                    {file.backup_file_path && ` (${file.backup_file_path.split(/[/\\]/).pop()})`}
+                                                                    {file.backup_file_path && ` (${file.backup_file_path.split(/[/\\]/).pop()?.replace(/^backup_\d+_/, 'backup_')})`}
                                                                 </span>
                                                             )}
                                                         </>

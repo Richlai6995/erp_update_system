@@ -2,10 +2,11 @@ const oracledb = require('oracledb');
 require('dotenv').config();
 
 // Use Thin Mode (no Instant Client required if DB is recent enough)
+// Use Thin Mode (no Instant Client required if DB is recent enough)
 try {
-    oracledb.initOracleClient({ libDir: process.env.ORACLE_LIB_DIR || undefined }); // Optional, usually auto-detects or uses Thin Mode if no libDir
+    oracledb.initOracleClient({ libDir: process.env.ORACLE_HOME || '/opt/oracle/instantclient_19_26' });
 } catch (e) {
-    console.log("Oracle Client Init (or Thin Mode Check):", e.message);
+    console.log("Oracle Client Init Error:", e.message);
 }
 
 const config = {

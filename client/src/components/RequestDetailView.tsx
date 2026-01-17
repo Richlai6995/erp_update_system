@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Modal } from './ui/Modal';
+import { Input } from './ui/Input';
 import api from '../lib/api';
 
 interface RequestDetailViewProps {
@@ -291,8 +292,8 @@ export const RequestDetailView: React.FC<RequestDetailViewProps> = ({ project, u
                                     <div className="flex justify-between font-medium">
                                         <span>{app.username}</span>
                                         <span className={`px-2 py-0.5 rounded text-xs ${app.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                                                app.status === 'approved' ? 'bg-green-200 text-green-800' :
-                                                    'bg-red-200 text-red-800'
+                                            app.status === 'approved' ? 'bg-green-200 text-green-800' :
+                                                'bg-red-200 text-red-800'
                                             }`}>{app.status}</span>
                                     </div>
                                     {app.comment && (
@@ -343,11 +344,11 @@ export const RequestDetailView: React.FC<RequestDetailViewProps> = ({ project, u
                 <div className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium mb-1">選擇檔案</label>
-                        <Input type="file" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
+                        <Input type="file" onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUploadFile(e.target.files?.[0] || null)} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium mb-1">檔案說明 (選填)</label>
-                        <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="例如: 規格書 v1.0" />
+                        <Input value={description} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)} placeholder="例如: 規格書 v1.0" />
                     </div>
                     <div className="flex justify-end gap-2 mt-4">
                         <Button variant="ghost" onClick={() => setIsUploadModalOpen(false)}>取消</Button>
@@ -371,7 +372,7 @@ export const RequestDetailView: React.FC<RequestDetailViewProps> = ({ project, u
                     <div className="flex justify-end gap-2 mt-4">
                         <Button variant="ghost" onClick={() => setIsApprovalModalOpen(false)}>取消</Button>
                         <Button
-                            variant={actionType === 'approve' ? 'primary' : 'destructive'}
+                            variant={actionType === 'approve' ? 'primary' : 'danger'}
                             onClick={handleApprovalAction}
                             disabled={!actionComment.trim()}
                         >

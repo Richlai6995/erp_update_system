@@ -96,7 +96,7 @@ exports.updateEnvSettings = (newSettings) => {
                 if ((key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET')) && newValue === '********') {
                     newLines.push(line);
                 } else {
-                    newLines.push(`${key}=${newValue}`);
+                    newLines.push(`${key}="${newValue}"`);
                 }
                 keysUpdated.add(key);
             } else {
@@ -113,7 +113,7 @@ exports.updateEnvSettings = (newSettings) => {
             const newValue = newSettings[key];
             // Don't write masked value if it somehow got here for a new key (shouldn't happen usually)
             if (newValue !== '********') {
-                newLines.push(`${key}=${newValue}`);
+                newLines.push(`${key}="${newValue}"`);
             }
         }
     });

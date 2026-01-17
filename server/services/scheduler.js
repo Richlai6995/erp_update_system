@@ -77,9 +77,9 @@ class Scheduler {
 
                         const normalizedPath = project.local_path.replace(/\\/g, '/');
 
-                        // Try to split by container folder name first (handling typo in host/db if any)
-                        // Matches /file_management_container/ or /file_managerment_container/
-                        const containerRegex = /\/file_manager?me?nt_container\//i;
+                        // Try to split by container folder name first
+                        // Matches /erp_update_system_container/ or /file_manage(r)ment_container/
+                        const containerRegex = /\/(erp_update_system_container|file_manager?me?nt_container)\//i;
                         const containerMatch = normalizedPath.match(containerRegex);
 
                         let callbackPath = null;

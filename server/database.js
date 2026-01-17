@@ -209,6 +209,69 @@ function initSchema(db) {
   )`);
 
 
+  // --- DOCUMENT AUTOMATION TABLES ---
+
+  db.exec(`CREATE TABLE IF NOT EXISTS doc_projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE,
+    description TEXT,
+    local_path TEXT,
+    drive_folder_id TEXT,
+    status TEXT DEFAULT 'active',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id INTEGER,
+    name TEXT,
+    drive_folder_id TEXT,
+    project_id INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS doc_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER,
+    name TEXT,
+    description TEXT,
+    content TEXT,
+    template_file TEXT,
+    output_format TEXT DEFAULT 'html',
+    email_to TEXT,
+    email_cc TEXT,
+    email_subject TEXT,
+    email_from TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES doc_projects(id)
+  )`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS doc_schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id INTEGER,
+    cron_expression TEXT,
+    date_offset INTEGER DEFAULT 0,
+    enabled INTEGER DEFAULT 1,
+    last_run_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(template_id) REFERENCES doc_templates(id)
+  )`);
+
+  db.exec(`CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER,
+    folder_id INTEGER,
+    filename TEXT,
+    drive_file_id TEXT,
+    mime_type TEXT,
+    size INTEGER,
+    uploader_id INTEGER,
+    description TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES doc_projects(id),
+    FOREIGN KEY(folder_id) REFERENCES folders(id)
+  )`);
+
   // Seed DB Object Types if empty
   try {
     const defaultObjTypes = ['table', 'view', 'procedure', 'function', 'trigger', 'sequence'];

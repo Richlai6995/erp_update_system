@@ -811,10 +811,18 @@ export const SystemManagement: React.FC<SystemManagementProps> = ({ isOpen, onCl
                                             onChange={e => setBackupSchedule({ ...backupSchedule, frequency: e.target.value })}
                                         >
                                             <option value="manual">不自動備份 (僅手動)</option>
-                                            <option value="daily">每天 (02:00)</option>
-                                            <option value="weekly">每週 (Sunday 02:00)</option>
-                                            <option value="monthly">每月 (1st 02:00)</option>
+                                            <option value="daily">每天 (Daily)</option>
+                                            <option value="weekly">每週 (Weekly - Sunday)</option>
+                                            <option value="monthly">每月 (Monthly - 1st Day)</option>
                                         </select>
+                                        {backupSchedule.frequency !== 'manual' && (
+                                            <input
+                                                type="time"
+                                                className="w-32 px-3 py-2 border border-slate-300 rounded text-sm outline-none focus:border-indigo-500"
+                                                value={backupSchedule.time || '02:00'}
+                                                onChange={e => setBackupSchedule({ ...backupSchedule, time: e.target.value })}
+                                            />
+                                        )}
                                         <Button
                                             variant="secondary"
                                             onClick={handleSaveBackupConfig}

@@ -70,7 +70,7 @@ A comprehensive web-based platform for managing, reviewing, and deploying ERP sy
     ```bash
     cd server
     node server.js
-    # Runs on port 3002 by default
+    # Runs on port 3003 by default
     ```
 
 2.  **Start Frontend**

@@ -33,6 +33,7 @@ const authenticateLDAP = (account, password) => {
 
             // 1. Bind Manager
             console.log(`[LDAP] Binding Manager: ${LDAP_CONFIG.managerDN}`);
+            console.log(`[DEBUG] Manager Password Length: ${LDAP_CONFIG.managerPass ? LDAP_CONFIG.managerPass.length : 'NULL/UNDEFINED'}`);
             client.bind(LDAP_CONFIG.managerDN, LDAP_CONFIG.managerPass, (err) => {
                 if (err) {
                     console.error("[LDAP] Manager Bind Failed:", err);

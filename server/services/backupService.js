@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const cron = require('node-cron');
-const { db } = require('../database');
 const dbModule = require('../database');
 
 const CONFIG_PATH = path.join(__dirname, '../config/system.yaml');
@@ -15,12 +14,7 @@ class BackupService {
     }
 
     getBackupPath() {
-        // 1. Environment Variable (Highest Priority for Dev/Docker overrides)
-        if (process.env.BACKUP_FILES_DIR) {
-            return process.env.BACKUP_FILES_DIR;
-        }
-
-        // 2. Try to read from config/system.yaml
+        // 1. Try to read from config/system.yaml (Highest Priority)
         try {
             if (fs.existsSync(CONFIG_PATH)) {
                 const content = fs.readFileSync(CONFIG_PATH, 'utf8');
@@ -32,15 +26,17 @@ class BackupService {
         } catch (e) {
             console.error("Failed to read config/system.yaml", e);
         }
-        return DEFAULT_BACKUP_PATH;
-    }
 
-    getDisplayPath() {
-        // 1. Environment Variable (Highest Priority)
+        // 2. Environment Variable
         if (process.env.BACKUP_FILES_DIR) {
             return process.env.BACKUP_FILES_DIR;
         }
 
+        return DEFAULT_BACKUP_PATH;
+    }
+
+    getDisplayPath() {
+        // 1. Try to read from config/system.yaml (Highest Priority for Display)
         try {
             if (fs.existsSync(CONFIG_PATH)) {
                 const content = fs.readFileSync(CONFIG_PATH, 'utf8');
@@ -50,6 +46,12 @@ class BackupService {
                 }
             }
         } catch (e) { }
+
+        // 2. Environment Variable
+        if (process.env.BACKUP_FILES_DIR) {
+            return process.env.BACKUP_FILES_DIR;
+        }
+
         return this.getBackupPath(); // Fallback to real path
     }
 
@@ -77,7 +79,12 @@ class BackupService {
      */
     getCronFromPreset(preset, time = '02:00') {
         const [hour, minute] = time.split(':').map(Number);
-        if (isNaN(hour) || isNaN(minute)) return '0 2 * * *'; // Default
+
+        // Validate time
+        if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+            console.warn(`Invalid time format: ${time}, defaulting to 02:00`);
+            return '0 2 * * *';
+        }
 
         if (preset === 'daily') return `${minute} ${hour} * * *`;
         if (preset === 'weekly') return `${minute} ${hour} * * 0`; // Sunday
@@ -93,6 +100,12 @@ class BackupService {
 
         try {
             // Check if table exists (it should)
+            const db = dbModule.db;
+            if (!db) {
+                console.warn("Database not ready for backup schedule reload");
+                return;
+            }
+
             const row = db.prepare("SELECT value FROM system_settings WHERE key = 'BACKUP_SCHEDULE'").get();
             if (!row) {
                 console.log("No backup schedule configured.");
@@ -109,10 +122,13 @@ class BackupService {
             const cronExp = this.getCronFromPreset(schedule.frequency, schedule.time);
 
             if (cronExp) {
-                console.log(`Scheduling Database Backup with cron: ${cronExp}`);
+                console.log(`Scheduling Database Backup with cron: ${cronExp} (Asia/Taipei)`);
                 this.backupJob = cron.schedule(cronExp, () => {
                     console.log("Executing Scheduled Database Backup...");
                     this.performBackup('Scheduled');
+                }, {
+                    scheduled: true,
+                    timezone: "Asia/Taipei"
                 });
             }
         } catch (e) {
@@ -130,6 +146,18 @@ class BackupService {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `backup_${timestamp}.db`;
             const destPath = path.join(dir, filename);
+
+            const db = dbModule.db;
+            if (db) {
+                // If we have a wrapper, maybe we need the raw file path?
+                // The current implementation uses fs.copyFileSync(DB_PATH, ...).
+                // DB_PATH is a constant in this file.
+                // Wait, line 10 in original file: const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../system.db');
+
+                // We should probably flush WAL or ensure consistency if possible?
+                // For sqlite, copying the file while open is "okay" but better if checkpoints happen.
+                // But let's stick to the copy logic which was working.
+            }
 
             fs.copyFileSync(DB_PATH, destPath);
 

@@ -1,0 +1,65 @@
+PURCHASE ORDER (PO) SUMMARY
+==================================================
+PO Number:       4500808411
+PO Date:         2025-02-20
+Buyer:           Alpha Technologies Services, Inc.
+Vendor:          CHENG UEI PRECISION INDUSTRY (VIETNAM)
+Vendor No:       113857
+
+CONTACT INFORMATION
+==================================================
+BUYER CONTACT:
+Name:            Kae Nelson
+Phone:           360-392-2367
+Email:           kae.nelson@enersys.com
+
+VENDOR CONTACT:
+Confirmed With:  HANKC CHEN
+Address:         18 CHUNG SHAN ROAD, TU,CHENG,DISTRICT, 
+                 236 NEW TAIPEI CITY, TAIWAN
+
+SHIPPING & BILLING
+==================================================
+SHIP TO:
+Alpha Technologies Services, Inc. (Plant 2004)
+1075 SATELLITE BLVD NW, SUITE 400
+SUWANEE GA 30024-4624
+USA
+
+BILL TO:
+Alpha Technologies Services, Inc.
+3767 ALPHA WAY
+BELLINGHAM WA 98226-8302
+USA
+
+ORDER DETAILS & FINANCIALS
+==================================================
+Payment Terms:   NET 60
+Incoterms:       FCA FACTORY
+Currency:        USD
+On-Dock Date:    2025-09-24 (Estimated Delivery)
+
+LINE ITEMS
+--------------------------------------------------
+Line Item:       0010
+Material/Part #: 704-245-20-001N
+Description:     PCBA, XM3.1HP, MOV BD, 120V
+                 (RoHS Status: ROHS COMPLIANT)
+Quantity:        2,160 EA
+Unit Price:      $5.26
+Net Amount:      $11,361.60
+
+Notes:           quote 6/10 @5.26 from $5.19
+
+--------------------------------------------------
+TOTAL PO VALUE:  $11,361.60
+--------------------------------------------------
+
+IMPORTANT INSTRUCTIONS
+==================================================
+1. Acknowledgement: Vendor must return acknowledgement within 2 days.
+2. Documentation Requirements: 
+   - PO#, Line Item, P/N, and Qty Shipped must be on all Packing Slips, BOLs, and Invoices.
+   - Packing Slips must be included in every shipment.
+3. Penalty: Non-compliance with documentation guidelines will result in 100% chargeback.
+4. Freight: Buyer only pays freight complying with Routing Guide.

@@ -17,9 +17,12 @@ interface LogEntry {
     type: 'info' | 'error' | 'success' | 'warning';
 }
 
+
+type CompilationStatus = 'idle' | 'compiling' | 'success' | 'error';
+
 export default function CompilationModal({ isOpen, onClose, requestId, files, onSuccess }: CompilationModalProps) {
     const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [status, setStatus] = useState<'idle' | 'compiling' | 'success' | 'error'>('idle');
+    const [status, setStatus] = useState<CompilationStatus>('idle');
     const logsEndRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom of logs
@@ -148,7 +151,7 @@ export default function CompilationModal({ isOpen, onClose, requestId, files, on
                         {(status === 'idle' || status === 'error' || status === 'success') && hasCompilableFiles && (
                             <button
                                 onClick={handleCompile}
-                                disabled={status === 'compiling'}
+                                disabled={(status as any) === 'compiling'}
                                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {status === 'idle' ? <Play size={16} /> : <RefreshCw size={16} />}
