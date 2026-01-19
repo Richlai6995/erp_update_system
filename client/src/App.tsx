@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import RequestList from './pages/RequestList';
 import RequestForm from './pages/RequestForm';
+import TerminalPage from './pages/TerminalPage';
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) => {
@@ -57,6 +58,16 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
+      <Route
+        path="/terminal/:id"
+        element={
+          <ProtectedRoute>
+            <TerminalPage />
+          </ProtectedRoute>
+        }
+      />
+
 
       {/* Redirect root to requests instead of projects */}
       <Route path="/" element={<Navigate to="/requests" />} />

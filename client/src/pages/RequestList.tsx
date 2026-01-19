@@ -124,36 +124,39 @@ export default function RequestList() {
             if (searchParams[k]) params[k] = searchParams[k];
         });
 
-        // Parse params to query string
         const queryString = new URLSearchParams(params as any).toString();
-        const url = `/api/requests/export?${queryString}`;
+        const url = `/requests/export?${queryString}`;
 
-        // Open in new tab/trigger download
-        // Since we have Auth token in headers for API, but window.open doesn't send headers easily.
-        // We need to fetch blob and download.
         try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+            const res = await api.get(url, {
+                responseType: 'blob'
             });
-            if (res.ok) {
-                const blob = await res.blob();
-                const downloadUrl = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = downloadUrl;
-                a.download = `requests_export_${new Date().toISOString().slice(0, 10)}.csv`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(downloadUrl);
-            } else {
-                alert('匯出失敗');
-            }
-        } catch (e) {
+
+            // Configured in api.ts to use sessionStorage token via interceptor
+            const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = `requests_export_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(downloadUrl);
+        } catch (e: any) {
             console.error(e);
-            alert('匯出發生錯誤');
+            let errMsg = '匯出失敗';
+            // If blob response, we might need to read it to get text error
+            if (e.response?.data instanceof Blob) {
+                try {
+                    const text = await e.response.data.text();
+                    errMsg += ': ' + text;
+                } catch (err) { /* ignore */ }
+            } else if (e.response?.data) {
+                errMsg += ': ' + JSON.stringify(e.response.data);
+            } else if (e.message) {
+                errMsg += ': ' + e.message;
+            }
+            alert(errMsg);
         }
     };
 
@@ -170,12 +173,12 @@ export default function RequestList() {
         }
     };
 
-    const StatusBadge = ({ status }: { status: string }) => {
+    const StatusBadge = ({ status, programType }: { status: string, programType?: string }) => {
         const labels: any = {
             draft: '開立 (Open)',
             reviewing: '簽核中 (Reviewing)',
             approved: '已核准 (Approved)',
-            online: '已上線 (Online)',
+            online: programType === 'Terminal Access' ? 'DBA 核准 (DBA Approved)' : '已上線 (Online)',
             manager_rejected: '主管退回 (Manager Rejected)',
             dba_rejected: 'DBA 退回 (DBA Rejected)',
             void: '已作廢 (Void)'
@@ -417,7 +420,7 @@ export default function RequestList() {
                                                 <span className="font-mono text-sm font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">
                                                     {request.form_id}
                                                 </span>
-                                                <StatusBadge status={request.status} />
+                                                <StatusBadge status={request.status} programType={request.program_type} />
                                                 <span className="text-xs text-slate-400">
                                                     {new Date(request.apply_date).toLocaleString('sv').replace(' ', ' ')}
                                                 </span>

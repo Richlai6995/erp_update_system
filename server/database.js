@@ -375,6 +375,29 @@ function initSchema(db) {
       db.exec("ALTER TABLE application_files ADD COLUMN backup_at TEXT");
     }
   } catch (e) { console.error("Migration backup_at failed:", e); }
+
+  // Add dba_comment to applications if not exists
+  try {
+    const appTableInfo = db.prepare("PRAGMA table_info(applications)").all();
+    if (!appTableInfo.some(c => c.name === 'dba_comment')) {
+      db.exec("ALTER TABLE applications ADD COLUMN dba_comment TEXT");
+    }
+  } catch (e) { console.error("Migration dba_comment failed:", e); }
+
+  // Add Terminal Access columns to applications if not exists
+  try {
+    const appTableInfo = db.prepare("PRAGMA table_info(applications)").all();
+
+    if (!appTableInfo.some(c => c.name === 'access_db_user')) {
+      db.exec("ALTER TABLE applications ADD COLUMN access_db_user TEXT");
+    }
+    if (!appTableInfo.some(c => c.name === 'access_start_time')) {
+      db.exec("ALTER TABLE applications ADD COLUMN access_start_time TEXT");
+    }
+    if (!appTableInfo.some(c => c.name === 'access_end_time')) {
+      db.exec("ALTER TABLE applications ADD COLUMN access_end_time TEXT");
+    }
+  } catch (e) { console.error("Migration terminal columns failed:", e); }
 }
 
 const dbExports = {

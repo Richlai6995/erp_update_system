@@ -4,13 +4,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../lib/api';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { ArrowLeft, Upload, X, File, Save, CheckCircle, Send, Clock, User, MessageSquare, ThumbsUp, ThumbsDown, Globe, Edit3, UploadCloud, GripVertical } from 'lucide-react';
+import { ArrowLeft, Upload, X, File, Save, CheckCircle, Send, Clock, User, MessageSquare, ThumbsUp, ThumbsDown, Globe, Edit3, UploadCloud, GripVertical, Plug } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/ui/Modal';
 import { DeploymentModal } from '../components/DeploymentModal';
 import CompilationModal from '../components/CompilationModal';
 import { Terminal } from 'lucide-react';
 import { Reorder } from 'framer-motion';
+import DatePicker from 'react-datepicker';
+import "react-datepicker/dist/react-datepicker.css";
 
 interface Module { id: number; name: string; code: string; }
 interface FileItem {
@@ -96,6 +98,40 @@ export default function RequestForm() {
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const [selectedAiModel, setSelectedAiModel] = useState('gemini-3-flash-preview');
 
+    // DB User Config
+    interface DBUserConfig { id: string; username: string; description: string; }
+    const [dbUsers, setDbUsers] = useState<DBUserConfig[]>([]);
+
+    // Terminal Access State
+    const [accessDbUser, setAccessDbUser] = useState('');
+    const [accessStartTime, setAccessStartTime] = useState('');
+    const [accessEndTime, setAccessEndTime] = useState('');
+
+    // Auth Helpers
+    const [applicantId, setApplicantId] = useState<number | null>(null);
+    const isApplicant = user && applicantId ? user.id === applicantId : false;
+    const isAdmin = user ? (user.role === 'admin' || user.role === 'dba') : false;
+
+    // Access Status Check
+    const now = new Date();
+    const isApproved = status === 'approved';
+    const isAccessActive = isApproved &&
+        accessStartTime && accessEndTime &&
+        now >= new Date(accessStartTime) &&
+        now <= new Date(accessEndTime);
+
+    const getAccessStatusLabel = () => {
+        if (!isApproved) return null;
+        if (!accessStartTime || !accessEndTime) return <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded">未設定連線時間</span>;
+
+        const start = new Date(accessStartTime);
+        const end = new Date(accessEndTime);
+
+        if (now < start) return <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded border border-yellow-200">連線尚未開始 (Starts: {start.toLocaleString()})</span>;
+        if (now > end) return <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded border border-red-200">連線已過期 (Ended: {end.toLocaleString()})</span>;
+        return <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded border border-green-200 font-bold flex items-center gap-1"><CheckCircle size={12} /> 連線開放中 (Active)</span>;
+    };
+
     useEffect(() => {
         fetchBasicSettings();
         if (id) fetchRequest(id);
@@ -111,6 +147,9 @@ export default function RequestForm() {
             setModules(mods.data);
             const dbTypes = await api.get('/admin/settings/db-object-types');
             setDbObjectTypes(dbTypes.data || []);
+            // Fetch DB Users for Terminal Access
+            const dbRef = await api.get('/admin/settings/db-users');
+            setDbUsers(dbRef.data || []);
         } catch (e) { console.error(e); }
     };
 
@@ -129,9 +168,15 @@ export default function RequestForm() {
             setExistingFiles(data.files || []);
             setReviews(data.reviews || []);
             setApplicantName(data.applicant_name);
+            setApplicantId(data.applicant_id); // Set ID
             setApplyDate(data.apply_date);
             setHasTested(data.has_tested === 1);
             setCanApprove(data.can_approve === true);
+
+            // Terminal Access
+            setAccessDbUser(data.access_db_user || '');
+            setAccessStartTime(data.access_start_time || '');
+            setAccessEndTime(data.access_end_time || '');
 
             if (data.status !== 'draft' && data.status !== 'manager_rejected' && data.status !== 'dba_rejected') setIsReadOnly(true);
             else setIsReadOnly(false);
@@ -224,7 +269,20 @@ export default function RequestForm() {
     };
 
     const handleSaveOrSubmit = async (action: 'save' | 'submit') => {
-        if (!moduleId) return alert('請選擇模組');
+        // Terminal Access Validation
+        if (programType === 'Terminal Access') {
+            if (!accessDbUser) return alert('請選擇 目標 DB 帳號 (Target DB User)');
+            if (!accessStartTime) return alert('請填寫 預計開始時間');
+            if (!accessEndTime) return alert('請填寫 預計結束時間');
+
+            if (new Date(accessStartTime) >= new Date(accessEndTime)) {
+                return alert('預計結束時間必須晚於開始時間');
+            }
+        }
+
+        // Skip module validation for Terminal Access as it's hidden
+        if (programType !== 'Terminal Access' && !moduleId) return alert('請選擇模組');
+
         if (programType === 'DB Object') {
             // Check New Files
             const missingType = newFiles.some(f => !f.dbObjectType);
@@ -243,7 +301,7 @@ export default function RequestForm() {
                 return alert('更新舊程式 務必備份完成才可送簽');
             }
         }
-        if (action === 'submit' && !hasTested) return alert('請確認已在測試環境完成測試');
+        if (programType !== 'Terminal Access' && action === 'submit' && !hasTested) return alert('請確認已在測試環境完成測試');
 
         setIsLoading(true);
         try {
@@ -254,7 +312,11 @@ export default function RequestForm() {
                 db_object_type: programType === 'DB Object' ? dbObjectType : null, // Main type (legacy use) or specific?
                 description,
                 agent_flow_id: agentFlowId,
-                has_tested: hasTested
+                has_tested: hasTested,
+                // Terminal Access Fields
+                access_db_user: accessDbUser || null,
+                access_start_time: accessStartTime || null,
+                access_end_time: accessEndTime || null
             };
 
             if (!reqId) {
@@ -309,9 +371,7 @@ export default function RequestForm() {
         if (!id) return;
 
         let comment = reviewComment;
-        if (action === 'online') {
-            if (!comment) return alert('請輸入回覆 (必要)');
-        } else if (action === 'reject') {
+        if (action === 'reject') {
             if (!comment) return alert('請輸入退回原因 (必要)');
         }
 
@@ -451,7 +511,7 @@ export default function RequestForm() {
             draft: '開立 (Open)',
             reviewing: '簽核中 (Reviewing)',
             approved: '已核准 (Approved)',
-            online: '已上線 (Online)',
+            online: programType === 'Terminal Access' ? 'DBA 核准 (DBA Approved)' : '已上線 (Online)',
             void: '已作廢 (Void)',
             manager_rejected: '主管退回 (Manager Rejected)',
             dba_rejected: 'DBA 退回 (DBA Rejected)'
@@ -539,18 +599,20 @@ export default function RequestForm() {
 
                 {/* Main Form (Inputs) */}
                 <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-1">
-                        <label className="text-sm font-medium text-slate-700">模組 (Module)</label>
-                        <select
-                            disabled={isReadOnly}
-                            className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm disabled:bg-slate-50"
-                            value={moduleId}
-                            onChange={(e) => setModuleId(e.target.value as any)}
-                        >
-                            <option value="">請選擇...</option>
-                            {modules.map(m => <option key={m.id} value={m.id}>{m.code} - {m.name}</option>)}
-                        </select>
-                    </div>
+                    {programType !== 'Terminal Access' && (
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium text-slate-700">模組 (Module)</label>
+                            <select
+                                disabled={isReadOnly}
+                                className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm disabled:bg-slate-50"
+                                value={moduleId}
+                                onChange={(e) => setModuleId(e.target.value as any)}
+                            >
+                                <option value="">請選擇...</option>
+                                {modules.map(m => <option key={m.id} value={m.id}>{m.code} - {m.name}</option>)}
+                            </select>
+                        </div>
+                    )}
 
                     <div className="space-y-1">
                         <label className="text-sm font-medium text-slate-700">程式類別 (Type)</label>
@@ -565,19 +627,77 @@ export default function RequestForm() {
                             <option value="SQL">SQL</option>
                             <option value="Library">Library</option>
                             <option value="DB Object">DB Object</option>
+                            <option value="Terminal Access">Terminal Access</option>
                         </select>
                     </div>
 
-                    <div className="col-span-2 space-y-1">
-                        <label className="text-sm font-medium text-slate-700">Notes 單號 (Optional)</label>
-                        <Input
-                            disabled={isReadOnly}
-                            placeholder="請輸入 Notes 單號..."
-                            value={agentFlowId}
-                            onChange={e => setAgentFlowId(e.target.value)}
-                            maxLength={30}
-                        />
-                    </div>
+                    {programType === 'Terminal Access' ? (
+                        <>
+                            {/* Terminal Access Specific Fields */}
+                            <div className="space-y-1">
+                                <label className="text-sm font-medium text-slate-700">目標 DB 帳號 (DB User)</label>
+                                <select
+                                    disabled={isReadOnly}
+                                    className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm disabled:bg-slate-50"
+                                    value={accessDbUser}
+                                    onChange={(e) => setAccessDbUser(e.target.value)}
+                                >
+                                    <option value="">請選擇...</option>
+                                    <option value="apps">APPS (Default)</option>
+                                    {dbUsers.filter(u => u.username !== 'apps').map(u => (
+                                        <option key={u.id} value={u.username}>{u.username.toUpperCase()} - {u.description}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+
+                            <div className="col-span-1 space-y-1">
+                                <label className="text-sm font-medium text-slate-700">預計開始時間 (Start Time)</label>
+                                <div className="w-full">
+                                    <DatePicker
+                                        selected={accessStartTime ? new Date(accessStartTime) : null}
+                                        onChange={(date: Date | null) => setAccessStartTime(date ? date.toISOString() : '')}
+                                        showTimeSelect
+                                        timeFormat="HH:mm"
+                                        timeIntervals={60}
+                                        dateFormat="yyyy/MM/dd HH:mm"
+                                        disabled={isReadOnly && !(['admin', 'dba'].includes(user?.role || '') && ['dba_processing', 'approved', 'online'].includes(status))}
+                                        className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm disabled:bg-slate-50"
+                                        placeholderText="請選擇開始時間..."
+                                    />
+                                </div>
+                            </div>
+                            <div className="col-span-1 space-y-1">
+                                <label className="text-sm font-medium text-slate-700">預計結束時間 (End Time)</label>
+                                <div className="w-full">
+                                    <DatePicker
+                                        selected={accessEndTime ? new Date(accessEndTime) : null}
+                                        onChange={(date: Date | null) => setAccessEndTime(date ? date.toISOString() : '')}
+                                        showTimeSelect
+                                        timeFormat="HH:mm"
+                                        timeIntervals={60}
+                                        dateFormat="yyyy/MM/dd HH:mm"
+                                        disabled={isReadOnly && !(['admin', 'dba'].includes(user?.role || '') && ['dba_processing', 'approved', 'online'].includes(status))}
+                                        className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm disabled:bg-slate-50"
+                                        placeholderText="請選擇結束時間..."
+                                    />
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        programType !== 'Terminal Access' && (
+                            <div className="col-span-2 space-y-1">
+                                <label className="text-sm font-medium text-slate-700">Notes 單號 (Optional)</label>
+                                <Input
+                                    disabled={isReadOnly}
+                                    placeholder="請輸入 Notes 單號..."
+                                    value={agentFlowId}
+                                    onChange={e => setAgentFlowId(e.target.value)}
+                                    maxLength={30}
+                                />
+                            </div>
+                        )
+                    )}
 
                     <div className="col-span-2 space-y-1">
                         <label className="text-sm font-medium text-slate-700">申請說明</label>
@@ -591,289 +711,292 @@ export default function RequestForm() {
                     </div>
                 </div>
 
-                <div className="col-span-2">
-                    <label className="flex items-center space-x-2">
-                        <input
-                            type="checkbox"
-                            disabled={isReadOnly}
-                            checked={hasTested}
-                            onChange={e => setHasTested(e.target.checked)}
-                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <span className="text-sm font-medium text-slate-700">已經於測試環境完成測試 (Tested in Test Environment)</span>
-                    </label>
-                </div>
-
-                {/* File Upload Section */}
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-semibold text-slate-800">程式檔案 (Files)</h3>
-                        <div className="flex gap-2 items-center">
-                            {/* AI Analysis Section: Visible for Edit OR Reviewer (canApprove) OR Admin/DBA */}
-                            {(!isReadOnly || canApprove || (status !== 'online' && status !== 'void' && ['admin', 'dba'].includes(user?.role || ''))) && (
-                                <>
-                                    <select
-                                        className="h-8 text-sm border-slate-300 rounded-md shadow-sm focus:border-purple-300 focus:ring focus:ring-purple-200 focus:ring-opacity-50"
-                                        value={selectedAiModel}
-                                        onChange={(e) => setSelectedAiModel(e.target.value)}
-                                    >
-                                        <option value="gemini-3-flash-preview">Gemini 3.0 Flash</option>
-                                        <option value="gemini-3-pro-preview">Gemini 3.0 Pro</option>
-                                    </select>
-                                    <Button variant="secondary" size="sm" onClick={handleAiAnalysis} className="text-purple-600 border-purple-200 hover:bg-purple-50">
-                                        <MessageSquare size={16} className="mr-2" /> AI SQL 分析
-                                    </Button>
-                                </>
-                            )}
-
-                            {/* New File Upload: Only for Edit Mode */}
-                            {!isReadOnly && (
-                                <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
-                                    <Upload size={16} className="mr-2" /> 新增檔案 (New)
-                                </Button>
-                            )}
-                        </div>
-                        <input type="file" ref={fileInputRef} multiple className="hidden" onChange={handleFileSelect} />
+                {programType !== 'Terminal Access' && (
+                    <div className="col-span-2">
+                        <label className="flex items-center space-x-2">
+                            <input
+                                type="checkbox"
+                                disabled={isReadOnly}
+                                checked={hasTested}
+                                onChange={e => setHasTested(e.target.checked)}
+                                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-slate-700">已經於測試環境完成測試 (Tested in Test Environment)</span>
+                        </label>
                     </div>
+                )}
 
-                    <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
-                        <Reorder.Group axis="y" values={existingFiles} onReorder={setExistingFiles} className="space-y-0">
-                            {existingFiles.map((file, index) => (
-                                <Reorder.Item key={file.id} value={file} className="bg-slate-50 border-b last:border-0 border-slate-100 p-3">
-                                    <div className="flex items-start gap-3">
-                                        {!isReadOnly && (
-                                            <div className="mt-2 text-slate-400 cursor-grab active:cursor-grabbing hover:text-slate-600">
-                                                <GripVertical size={16} />
+                {/* File Upload Section - Hide for Terminal Access */}
+                {programType !== 'Terminal Access' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-semibold text-slate-800">程式檔案 (Files)</h3>
+                            <div className="flex gap-2 items-center">
+                                {/* AI Analysis Section: Visible for Edit OR Reviewer (canApprove) OR Admin/DBA */}
+                                {(!isReadOnly || canApprove || (status !== 'online' && status !== 'void' && ['admin', 'dba'].includes(user?.role || ''))) && (
+                                    <>
+                                        <select
+                                            className="h-8 text-sm border-slate-300 rounded-md shadow-sm focus:border-purple-300 focus:ring focus:ring-purple-200 focus:ring-opacity-50"
+                                            value={selectedAiModel}
+                                            onChange={(e) => setSelectedAiModel(e.target.value)}
+                                        >
+                                            <option value="gemini-3-flash-preview">Gemini 3.0 Flash</option>
+                                            <option value="gemini-3-pro-preview">Gemini 3.0 Pro</option>
+                                        </select>
+                                        <Button variant="secondary" size="sm" onClick={handleAiAnalysis} className="text-purple-600 border-purple-200 hover:bg-purple-50">
+                                            <MessageSquare size={16} className="mr-2" /> AI SQL 分析
+                                        </Button>
+                                    </>
+                                )}
+
+                                {/* New File Upload: Only for Edit Mode */}
+                                {!isReadOnly && (
+                                    <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
+                                        <Upload size={16} className="mr-2" /> 新增檔案 (New)
+                                    </Button>
+                                )}
+                            </div>
+                            <input type="file" ref={fileInputRef} multiple className="hidden" onChange={handleFileSelect} />
+                        </div>
+
+                        <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                            <Reorder.Group axis="y" values={existingFiles} onReorder={setExistingFiles} className="space-y-0">
+                                {existingFiles.map((file, index) => (
+                                    <Reorder.Item key={file.id} value={file} className="bg-slate-50 border-b last:border-0 border-slate-100 p-3">
+                                        <div className="flex items-start gap-3">
+                                            {!isReadOnly && (
+                                                <div className="mt-2 text-slate-400 cursor-grab active:cursor-grabbing hover:text-slate-600">
+                                                    <GripVertical size={16} />
+                                                </div>
+                                            )}
+                                            <div className="flex flex-col items-center mt-1 w-8">
+                                                <span className="text-xs text-slate-500 font-mono">#{index + 1}</span>
+                                                <File size={18} className="text-slate-500 mt-1" />
                                             </div>
-                                        )}
-                                        <div className="flex flex-col items-center mt-1 w-8">
-                                            <span className="text-xs text-slate-500 font-mono">#{index + 1}</span>
-                                            <File size={18} className="text-slate-500 mt-1" />
-                                        </div>
 
-                                        <div className="flex-1 space-y-2">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="font-medium text-sm text-slate-900">{file.original_name}</span>
-                                                {file.db_object_type && isReadOnly && (
-                                                    <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">
-                                                        {file.db_object_type}
-                                                    </span>
-                                                )}
-                                                {(status === 'draft' || status === 'manager_rejected' || status === 'dba_rejected' || !isReadOnly) && (
-                                                    <button onClick={() => removeExistingFile(file.id!)} className="text-slate-400 hover:text-red-500 ml-auto">
-                                                        <X size={16} />
-                                                    </button>
-                                                )}
-                                            </div>
+                                            <div className="flex-1 space-y-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-medium text-sm text-slate-900">{file.original_name}</span>
+                                                    {file.db_object_type && isReadOnly && (
+                                                        <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">
+                                                            {file.db_object_type}
+                                                        </span>
+                                                    )}
+                                                    {(status === 'draft' || status === 'manager_rejected' || status === 'dba_rejected' || !isReadOnly) && (
+                                                        <button onClick={() => removeExistingFile(file.id!)} className="text-slate-400 hover:text-red-500 ml-auto">
+                                                            <X size={16} />
+                                                        </button>
+                                                    )}
+                                                </div>
 
-                                            <div className="flex flex-wrap gap-2 items-center">
-                                                {!isReadOnly ? (
-                                                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full">
-                                                        <select
-                                                            className="flex-shrink-0 h-7 px-2 bg-white border border-slate-300 rounded text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none"
-                                                            value={file.file_version || 'new'}
-                                                            onChange={e => handleExistingFileChange(file.id!, 'file_version', e.target.value)}
+                                                <div className="flex flex-wrap gap-2 items-center">
+                                                    {!isReadOnly ? (
+                                                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full">
+                                                            <select
+                                                                className="flex-shrink-0 h-7 px-2 bg-white border border-slate-300 rounded text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none"
+                                                                value={file.file_version || 'new'}
+                                                                onChange={e => handleExistingFileChange(file.id!, 'file_version', e.target.value)}
+                                                            >
+                                                                <option value="new">新程式</option>
+                                                                <option value="update">更新舊程式</option>
+                                                            </select>
+                                                            <input
+                                                                className="flex-1 min-w-[150px] h-7 px-2 bg-white border border-slate-300 rounded text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                                                                placeholder="檔案說明"
+                                                                value={file.description || ''}
+                                                                onChange={e => handleExistingFileChange(file.id!, 'description', e.target.value)}
+                                                            />
+                                                            {programType === 'DB Object' && (
+                                                                <>
+                                                                    <select
+                                                                        className="flex-shrink-0 w-24 h-7 px-2 bg-white border border-slate-300 rounded text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none"
+                                                                        value={file.db_object_type || ''}
+                                                                        onChange={e => handleExistingFileChange(file.id!, 'db_object_type', e.target.value)}
+                                                                    >
+                                                                        <option value="">類型...</option>
+                                                                        {dbObjectTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                                                                    </select>
+                                                                    <input
+                                                                        className="flex-shrink-0 w-32 h-7 px-2 bg-white border border-slate-300 rounded text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                                                                        placeholder="Object"
+                                                                        value={file.db_object_name || ''}
+                                                                        onChange={e => handleExistingFileChange(file.id!, 'db_object_name', e.target.value)}
+                                                                    />
+                                                                    <input
+                                                                        className="flex-shrink-0 w-24 h-7 px-2 bg-white border border-slate-300 rounded text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                                                                        placeholder="Schema"
+                                                                        value={file.db_schema_name || ''}
+                                                                        onChange={e => handleExistingFileChange(file.id!, 'db_schema_name', e.target.value)}
+                                                                    />
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        // Read Only View - Horizontal Layout
+                                                        <div className="flex flex-wrap items-center gap-3 text-xs">
+                                                            <div className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{file.description || '無描述'}</div>
+                                                            <span className={`px-2 py-0.5 rounded border ${file.file_version === 'update' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                                                                {file.file_version === 'update' ? '更新舊程式' : '新程式'}
+                                                            </span>
+                                                            {file.db_object_name && <span className="text-slate-500 font-mono text-[10px] border border-slate-200 px-1 rounded">{file.db_schema_name}.{file.db_object_name}</span>}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Status Badges & Actions - Now Inline even with Read Only View if possible, or just next to it */}
+                                                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                                                        {file.is_backup === 1 && <span className="text-xs text-green-600 flex gap-1 items-center bg-green-50 px-2 py-0.5 rounded border border-green-200"><CheckCircle size={10} /> 已備份</span>}
+                                                        {file.uploaded_at && <span className="text-[10px] text-slate-400">上傳: {new Date(file.uploaded_at).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>}
+
+                                                        {file.compiled_at && (
+                                                            <span className={`text-xs px-2 py-0.5 rounded border ${file.compile_status === 'success' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                                                {file.compile_status === 'success' ? '已編譯' : '編譯失敗'}
+                                                            </span>
+                                                        )}
+                                                        {file.deployed_at && (
+                                                            <span className={`text-xs px-2 py-0.5 rounded border ${file.deploy_status === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                                                {file.deploy_status === 'success' ? '已佈署' : '佈署失敗'}
+                                                            </span>
+                                                        )}
+
+                                                        <button
+                                                            onClick={async () => {
+                                                                try {
+                                                                    const token = sessionStorage.getItem('token');
+                                                                    const res = await fetch(`/api/uploads/${file.id}/download`, { headers: { 'Authorization': `Bearer ${token}` } });
+                                                                    if (res.ok) {
+                                                                        const blob = await res.blob();
+                                                                        const url = window.URL.createObjectURL(blob);
+                                                                        const a = document.createElement('a'); a.href = url; a.download = file.original_name; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); document.body.removeChild(a);
+                                                                    } else { alert('下載失敗'); }
+                                                                } catch (e) { alert('下載錯誤'); }
+                                                            }}
+                                                            className="text-xs text-blue-600 hover:text-blue-800 underline ml-1"
                                                         >
-                                                            <option value="new">新程式</option>
-                                                            <option value="update">更新舊程式</option>
-                                                        </select>
-                                                        <input
-                                                            className="flex-1 min-w-[150px] h-7 px-2 bg-white border border-slate-300 rounded text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-                                                            placeholder="檔案說明"
-                                                            value={file.description || ''}
-                                                            onChange={e => handleExistingFileChange(file.id!, 'description', e.target.value)}
-                                                        />
-                                                        {programType === 'DB Object' && (
+                                                            下載檔案
+                                                        </button>
+                                                        {file.backup_file_path && (
                                                             <>
-                                                                <select
-                                                                    className="flex-shrink-0 w-24 h-7 px-2 bg-white border border-slate-300 rounded text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none"
-                                                                    value={file.db_object_type || ''}
-                                                                    onChange={e => handleExistingFileChange(file.id!, 'db_object_type', e.target.value)}
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        try {
+                                                                            const token = sessionStorage.getItem('token');
+                                                                            const res = await fetch(`/api/uploads/${file.id}/download-backup`, { headers: { 'Authorization': `Bearer ${token}` } });
+                                                                            if (res.ok) {
+                                                                                const blob = await res.blob();
+                                                                                const url = window.URL.createObjectURL(blob);
+                                                                                const a = document.createElement('a'); a.href = url; a.download = `backup_${file.db_object_name || 'object'}.sql`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); document.body.removeChild(a);
+                                                                            } else { alert('下載失敗'); }
+                                                                        } catch (e) { alert('下載錯誤'); }
+                                                                    }}
+                                                                    className="text-xs text-green-600 hover:text-green-800 underline ml-1"
                                                                 >
-                                                                    <option value="">類型...</option>
-                                                                    {dbObjectTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                                                                </select>
-                                                                <input
-                                                                    className="flex-shrink-0 w-32 h-7 px-2 bg-white border border-slate-300 rounded text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-                                                                    placeholder="Object"
-                                                                    value={file.db_object_name || ''}
-                                                                    onChange={e => handleExistingFileChange(file.id!, 'db_object_name', e.target.value)}
-                                                                />
-                                                                <input
-                                                                    className="flex-shrink-0 w-24 h-7 px-2 bg-white border border-slate-300 rounded text-xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-                                                                    placeholder="Schema"
-                                                                    value={file.db_schema_name || ''}
-                                                                    onChange={e => handleExistingFileChange(file.id!, 'db_schema_name', e.target.value)}
-                                                                />
+                                                                    下載備份
+                                                                </button>
+                                                                {file.backup_at && (
+                                                                    <span className="text-[10px] text-blue-500 ml-1">
+                                                                        備份: {new Date(file.backup_at).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                                                                        {file.backup_file_path && ` (${file.backup_file_path.split(/[/\\]/).pop()?.replace(/^backup_\d+_/, 'backup_')})`}
+                                                                    </span>
+                                                                )}
                                                             </>
                                                         )}
                                                     </div>
-                                                ) : (
-                                                    // Read Only View - Horizontal Layout
-                                                    <div className="flex flex-wrap items-center gap-3 text-xs">
-                                                        <div className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{file.description || '無描述'}</div>
-                                                        <span className={`px-2 py-0.5 rounded border ${file.file_version === 'update' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
-                                                            {file.file_version === 'update' ? '更新舊程式' : '新程式'}
-                                                        </span>
-                                                        {file.db_object_name && <span className="text-slate-500 font-mono text-[10px] border border-slate-200 px-1 rounded">{file.db_schema_name}.{file.db_object_name}</span>}
-                                                    </div>
-                                                )}
-
-                                                {/* Status Badges & Actions - Now Inline even with Read Only View if possible, or just next to it */}
-                                                <div className="flex flex-wrap items-center gap-2 mt-1">
-                                                    {file.is_backup === 1 && <span className="text-xs text-green-600 flex gap-1 items-center bg-green-50 px-2 py-0.5 rounded border border-green-200"><CheckCircle size={10} /> 已備份</span>}
-                                                    {file.uploaded_at && <span className="text-[10px] text-slate-400">上傳: {new Date(file.uploaded_at).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>}
-
-                                                    {file.compiled_at && (
-                                                        <span className={`text-xs px-2 py-0.5 rounded border ${file.compile_status === 'success' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                                                            {file.compile_status === 'success' ? '已編譯' : '編譯失敗'}
-                                                        </span>
-                                                    )}
-                                                    {file.deployed_at && (
-                                                        <span className={`text-xs px-2 py-0.5 rounded border ${file.deploy_status === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                                                            {file.deploy_status === 'success' ? '已佈署' : '佈署失敗'}
-                                                        </span>
-                                                    )}
-
-                                                    <button
-                                                        onClick={async () => {
-                                                            try {
-                                                                const token = sessionStorage.getItem('token');
-                                                                const res = await fetch(`/api/uploads/${file.id}/download`, { headers: { 'Authorization': `Bearer ${token}` } });
-                                                                if (res.ok) {
-                                                                    const blob = await res.blob();
-                                                                    const url = window.URL.createObjectURL(blob);
-                                                                    const a = document.createElement('a'); a.href = url; a.download = file.original_name; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); document.body.removeChild(a);
-                                                                } else { alert('下載失敗'); }
-                                                            } catch (e) { alert('下載錯誤'); }
-                                                        }}
-                                                        className="text-xs text-blue-600 hover:text-blue-800 underline ml-1"
-                                                    >
-                                                        下載檔案
-                                                    </button>
-                                                    {file.backup_file_path && (
-                                                        <>
-                                                            <button
-                                                                onClick={async () => {
-                                                                    try {
-                                                                        const token = sessionStorage.getItem('token');
-                                                                        const res = await fetch(`/api/uploads/${file.id}/download-backup`, { headers: { 'Authorization': `Bearer ${token}` } });
-                                                                        if (res.ok) {
-                                                                            const blob = await res.blob();
-                                                                            const url = window.URL.createObjectURL(blob);
-                                                                            const a = document.createElement('a'); a.href = url; a.download = `backup_${file.db_object_name || 'object'}.sql`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); document.body.removeChild(a);
-                                                                        } else { alert('下載失敗'); }
-                                                                    } catch (e) { alert('下載錯誤'); }
-                                                                }}
-                                                                className="text-xs text-green-600 hover:text-green-800 underline ml-1"
-                                                            >
-                                                                下載備份
-                                                            </button>
-                                                            {file.backup_at && (
-                                                                <span className="text-[10px] text-blue-500 ml-1">
-                                                                    備份: {new Date(file.backup_at).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-                                                                    {file.backup_file_path && ` (${file.backup_file_path.split(/[/\\]/).pop()?.replace(/^backup_\d+_/, 'backup_')})`}
-                                                                </span>
-                                                            )}
-                                                        </>
-                                                    )}
                                                 </div>
+
+
                                             </div>
-
-
                                         </div>
+                                    </Reorder.Item>
+                                ))}
+                            </Reorder.Group>
+                            {newFiles.map((item, idx) => (
+                                <div key={idx} className="p-4 bg-white border-b last:border-0 border-slate-100 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 font-medium text-sm text-slate-900">
+                                            <div className="text-green-500"><File size={18} /></div>
+                                            {item.file.name}
+                                        </div>
+                                        <button onClick={() => removeNewFile(idx)} className="text-slate-400 hover:text-red-500">
+                                            <X size={16} />
+                                        </button>
                                     </div>
-                                </Reorder.Item>
-                            ))}
-                        </Reorder.Group>
-                        {newFiles.map((item, idx) => (
-                            <div key={idx} className="p-4 bg-white border-b last:border-0 border-slate-100 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2 font-medium text-sm text-slate-900">
-                                        <div className="text-green-500"><File size={18} /></div>
-                                        {item.file.name}
-                                    </div>
-                                    <button onClick={() => removeNewFile(idx)} className="text-slate-400 hover:text-red-500">
-                                        <X size={16} />
-                                    </button>
-                                </div>
 
-                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                                    <select
-                                        className="h-9 px-2 bg-white border border-slate-300 rounded text-xs w-full"
-                                        value={item.versionType}
-                                        onChange={e => {
-                                            const copy = [...newFiles];
-                                            copy[idx].versionType = e.target.value as any;
-                                            setNewFiles(copy);
-                                        }}
-                                    >
-                                        <option value="new">新程式</option>
-                                        <option value="update">更新舊程式</option>
-                                    </select>
-
-                                    <Input
-                                        placeholder="檔案說明 (可選)"
-                                        value={item.description}
-                                        onChange={e => handleNewFileDescChange(idx, e.target.value)}
-                                        className="h-9 text-xs w-full"
-                                    />
-
-                                    {programType === 'DB Object' && (
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                                         <select
                                             className="h-9 px-2 bg-white border border-slate-300 rounded text-xs w-full"
-                                            value={item.dbObjectType}
+                                            value={item.versionType}
                                             onChange={e => {
                                                 const copy = [...newFiles];
-                                                copy[idx].dbObjectType = e.target.value;
+                                                copy[idx].versionType = e.target.value as any;
                                                 setNewFiles(copy);
                                             }}
                                         >
-                                            <option value="">請選擇物件類別...</option>
-                                            {dbObjectTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                                            <option value="new">新程式</option>
+                                            <option value="update">更新舊程式</option>
                                         </select>
-                                    )}
-                                </div>
 
-                                {programType === 'DB Object' && (
-                                    <div className="p-3 bg-slate-50 rounded-lg space-y-3 border border-slate-200">
-                                        <div className="flex gap-3">
-                                            <div className="flex-1">
-                                                <label className="text-xs font-medium text-slate-500 mb-1 block">Object 名稱 <span className="text-red-500">*</span></label>
-                                                <Input
-                                                    className="h-8 text-xs bg-white w-full"
-                                                    value={item.dbObjectName}
-                                                    onChange={e => {
-                                                        const copy = [...newFiles]; copy[idx].dbObjectName = e.target.value; setNewFiles(copy);
-                                                    }}
-                                                />
+                                        <Input
+                                            placeholder="檔案說明 (可選)"
+                                            value={item.description}
+                                            onChange={e => handleNewFileDescChange(idx, e.target.value)}
+                                            className="h-9 text-xs w-full"
+                                        />
+
+                                        {programType === 'DB Object' && (
+                                            <select
+                                                className="h-9 px-2 bg-white border border-slate-300 rounded text-xs w-full"
+                                                value={item.dbObjectType}
+                                                onChange={e => {
+                                                    const copy = [...newFiles];
+                                                    copy[idx].dbObjectType = e.target.value;
+                                                    setNewFiles(copy);
+                                                }}
+                                            >
+                                                <option value="">請選擇物件類別...</option>
+                                                {dbObjectTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                                            </select>
+                                        )}
+                                    </div>
+
+                                    {programType === 'DB Object' && (
+                                        <div className="p-3 bg-slate-50 rounded-lg space-y-3 border border-slate-200">
+                                            <div className="flex gap-3">
+                                                <div className="flex-1">
+                                                    <label className="text-xs font-medium text-slate-500 mb-1 block">Object 名稱 <span className="text-red-500">*</span></label>
+                                                    <Input
+                                                        className="h-8 text-xs bg-white w-full"
+                                                        value={item.dbObjectName}
+                                                        onChange={e => {
+                                                            const copy = [...newFiles]; copy[idx].dbObjectName = e.target.value; setNewFiles(copy);
+                                                        }}
+                                                    />
+                                                </div>
+                                                <div className="w-32">
+                                                    <label className="text-xs font-medium text-slate-500 mb-1 block">Schema <span className="text-red-500">*</span></label>
+                                                    <Input
+                                                        className="h-8 text-xs bg-white w-full"
+                                                        value={item.dbSchemaName}
+                                                        onChange={e => {
+                                                            const copy = [...newFiles]; copy[idx].dbSchemaName = e.target.value; setNewFiles(copy);
+                                                        }}
+                                                    />
+                                                </div>
                                             </div>
-                                            <div className="w-32">
-                                                <label className="text-xs font-medium text-slate-500 mb-1 block">Schema <span className="text-red-500">*</span></label>
-                                                <Input
-                                                    className="h-8 text-xs bg-white w-full"
-                                                    value={item.dbSchemaName}
-                                                    onChange={e => {
-                                                        const copy = [...newFiles]; copy[idx].dbSchemaName = e.target.value; setNewFiles(copy);
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
 
-                                        <div className="flex flex-wrap items-center gap-4">
-                                            <label className="flex items-center space-x-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={item.isBackup}
-                                                    onChange={e => {
-                                                        const copy = [...newFiles]; copy[idx].isBackup = e.target.checked; setNewFiles(copy);
-                                                    }}
-                                                    className="w-4 h-4 text-blue-600 rounded border-gray-300"
-                                                />
-                                                <span className="text-xs font-medium text-slate-700">已備份 (Backup Done)</span>
-                                            </label>
+                                            <div className="flex flex-wrap items-center gap-4">
+                                                <label className="flex items-center space-x-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={item.isBackup}
+                                                        onChange={e => {
+                                                            const copy = [...newFiles]; copy[idx].isBackup = e.target.checked; setNewFiles(copy);
+                                                        }}
+                                                        className="w-4 h-4 text-blue-600 rounded border-gray-300"
+                                                    />
+                                                    <span className="text-xs font-medium text-slate-700">已備份 (Backup Done)</span>
+                                                </label>
 
-                                            {/* Show buttons if Update, OR if user wants them available. User asked to "Add button", implying visibility. 
+                                                {/* Show buttons if Update, OR if user wants them available. User asked to "Add button", implying visibility. 
                                                     Let's show them but maybe warn if not update? 
                                                     Actually, standardized workflow usually implies backup for 'update'. 
                                                     The user's prompt listing buttons suggests they should be there. 
@@ -881,65 +1004,66 @@ export default function RequestForm() {
                                                     but they are most relevant for Update. 
                                                  */}
 
-                                            <Button size="sm" variant="secondary" className="h-7 text-xs bg-white border border-slate-300 hover:bg-slate-50" onClick={() => handleAutoBackup(idx)}>
-                                                自動備份下載
-                                            </Button>
+                                                <Button size="sm" variant="secondary" className="h-7 text-xs bg-white border border-slate-300 hover:bg-slate-50" onClick={() => handleAutoBackup(idx)}>
+                                                    自動備份下載
+                                                </Button>
 
-                                            <div className="relative">
-                                                <input
-                                                    type="file"
-                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                                    onChange={(e) => {
-                                                        if (e.target.files?.[0]) handleManualBackup(idx, e.target.files[0]);
-                                                    }}
-                                                />
-                                                <Button size="sm" variant="secondary" className="h-7 text-xs bg-white border border-slate-300 hover:bg-slate-50">手動備份上傳</Button>
-                                            </div>
-
-                                            {item.isBackup && item.backupFilePath && (
-                                                <div className="flex items-center gap-2 bg-green-50 px-2 py-1 rounded border border-green-200">
-                                                    <span className="text-xs text-green-700 font-medium flex items-center gap-1">
-                                                        <CheckCircle size={12} /> 備份完成
-                                                    </span>
-                                                    <div className="h-3 w-[1px] bg-green-300"></div>
-                                                    <button
-                                                        onClick={async () => {
-                                                            // Use a temporary link to download? 
-                                                            // Or generic download route.
-                                                            // Since it's a temp file locally before save, we might need a dedicated temp download or just show name.
-                                                            // Backend returns `filePath`.
-                                                            // For now just alert or implementation properly if needed.
-                                                            // User asked for "Download and Delete".
-                                                            alert("請儲存後再從列表下載，或重新上傳");
+                                                <div className="relative">
+                                                    <input
+                                                        type="file"
+                                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                        onChange={(e) => {
+                                                            if (e.target.files?.[0]) handleManualBackup(idx, e.target.files[0]);
                                                         }}
-                                                        className="text-[10px] text-green-700 hover:underline cursor-pointer"
-                                                    >
-                                                        下載
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            const copy = [...newFiles];
-                                                            copy[idx].isBackup = false;
-                                                            copy[idx].backupFilePath = '';
-                                                            setNewFiles(copy);
-                                                        }}
-                                                        className="text-green-700 hover:text-red-600"
-                                                        title="刪除備份"
-                                                    >
-                                                        <X size={12} />
-                                                    </button>
+                                                    />
+                                                    <Button size="sm" variant="secondary" className="h-7 text-xs bg-white border border-slate-300 hover:bg-slate-50">手動備份上傳</Button>
                                                 </div>
-                                            )}
+
+                                                {item.isBackup && item.backupFilePath && (
+                                                    <div className="flex items-center gap-2 bg-green-50 px-2 py-1 rounded border border-green-200">
+                                                        <span className="text-xs text-green-700 font-medium flex items-center gap-1">
+                                                            <CheckCircle size={12} /> 備份完成
+                                                        </span>
+                                                        <div className="h-3 w-[1px] bg-green-300"></div>
+                                                        <button
+                                                            onClick={async () => {
+                                                                // Use a temporary link to download? 
+                                                                // Or generic download route.
+                                                                // Since it's a temp file locally before save, we might need a dedicated temp download or just show name.
+                                                                // Backend returns `filePath`.
+                                                                // For now just alert or implementation properly if needed.
+                                                                // User asked for "Download and Delete".
+                                                                alert("請儲存後再從列表下載，或重新上傳");
+                                                            }}
+                                                            className="text-[10px] text-green-700 hover:underline cursor-pointer"
+                                                        >
+                                                            下載
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                const copy = [...newFiles];
+                                                                copy[idx].isBackup = false;
+                                                                copy[idx].backupFilePath = '';
+                                                                setNewFiles(copy);
+                                                            }}
+                                                            className="text-green-700 hover:text-red-600"
+                                                            title="刪除備份"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                        {existingFiles.length === 0 && newFiles.length === 0 && (
-                            <div className="p-6 text-center text-slate-400 text-sm">暫無上傳檔案</div>
-                        )}
+                                    )}
+                                </div>
+                            ))}
+                            {existingFiles.length === 0 && newFiles.length === 0 && (
+                                <div className="p-6 text-center text-slate-400 text-sm">暫無上傳檔案</div>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Rejection/DBA Comments Display */}
                 {(status === 'manager_rejected' || status === 'dba_rejected' || status === 'online') && (
@@ -990,8 +1114,8 @@ export default function RequestForm() {
 
             {/* Footer Actions */}
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-                <div className="max-w-4xl mx-auto flex items-center justify-end gap-3">
-                    {(status === 'draft' && id) && (
+                <div className={`max-w-4xl mx-auto flex items-center ${(status === 'approved' && programType === 'Terminal Access' && (isApplicant || isAdmin)) ? 'justify-center' : 'justify-end'} gap-3`}>
+                    {(['draft', 'manager_rejected', 'dba_rejected'].includes(status) && id) && (
                         <Button
                             variant="danger"
                             className="bg-red-50 text-red-600 hover:bg-red-100 border-red-200 mr-auto"
@@ -1029,24 +1153,59 @@ export default function RequestForm() {
 
                     {status === 'approved' && (user?.role === 'admin' || user?.role === 'dba') && (
                         <>
-
                             <Button variant="danger" onClick={() => handleReviewAction('reject')} isLoading={isLoading} className="bg-red-50 text-red-600 hover:bg-red-100 border-red-200">
                                 <ThumbsDown size={16} className="mr-2" /> 退回 (Reject)
                             </Button>
-                            {(programType === 'Form' || programType === 'Library') && (
-                                <Button className="text-white hover:opacity-90" style={{ backgroundColor: '#daa520' }} onClick={() => {
-                                    setIsCompileModalOpen(true);
-                                }}>
-                                    <Terminal size={16} className="mr-2" /> 程式編譯 (Compile)
+
+                            {/* Normal Workflow Buttons */}
+                            {programType !== 'Terminal Access' && (
+                                <>
+                                    {(programType === 'Form' || programType === 'Library') && (
+                                        <Button className="text-white hover:opacity-90" style={{ backgroundColor: '#daa520' }} onClick={() => setIsCompileModalOpen(true)}>
+                                            <Terminal size={16} className="mr-2" /> 程式編譯 (Compile)
+                                        </Button>
+                                    )}
+                                    <Button className="text-white hover:opacity-90" style={{ backgroundColor: '#1e90ff' }} onClick={() => setIsDeployModalOpen(true)}>
+                                        <UploadCloud size={16} className="mr-2" /> 程式佈署 (Deploy)
+                                    </Button>
+                                    <Button className="text-white hover:opacity-90" style={{ backgroundColor: '#00ced1' }} onClick={() => handleReviewAction('online')} isLoading={isLoading}>
+                                        <Globe size={16} className="mr-2" /> DBA 上線 (Online)
+                                    </Button>
+                                </>
+                            )}
+
+                            {/* Terminal Access DBA Button */}
+                            {programType === 'Terminal Access' && (
+                                <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleReviewAction('online')} isLoading={isLoading}>
+                                    <Plug size={16} className="mr-2" /> 允許連線 (Allow Connection)
                                 </Button>
                             )}
-                            <Button className="text-white hover:opacity-90" style={{ backgroundColor: '#1e90ff' }} onClick={() => setIsDeployModalOpen(true)}>
-                                <UploadCloud size={16} className="mr-2" /> 程式佈署 (Deploy)
-                            </Button>
-                            <Button className="text-white hover:opacity-90" style={{ backgroundColor: '#00ced1' }} onClick={() => handleReviewAction('online')} isLoading={isLoading}>
-                                <Globe size={16} className="mr-2" /> DBA 上線 (Online)
-                            </Button>
                         </>
+                    )}
+
+                    {/* Applicant Actions: Start Connection */}
+                    {/* Applicant Actions: Start Connection */}
+                    {(() => { console.log('[Debug Terminal Btn]', { status, programType, isApplicant, isAdmin, id }); return null; })()}
+                    {(status === 'approved' || status === 'online') && programType === 'Terminal Access' && (isApplicant || isAdmin) && (
+                        <Button
+                            onClick={() => {
+                                const now = new Date();
+                                const start = accessStartTime ? new Date(accessStartTime) : null;
+                                const end = accessEndTime ? new Date(accessEndTime) : null;
+
+                                if (start && now < start) {
+                                    return alert(`未到達開放時間 (Not yet started)\n開放時間: ${start.toLocaleString()}`);
+                                }
+                                if (end && now > end) {
+                                    return alert(`已超過開放時間 (Expired)\n結束時間: ${end.toLocaleString()}`);
+                                }
+
+                                window.open(`/terminal/${id}`, '_blank');
+                            }}
+                            className="bg-black hover:bg-slate-800 text-white"
+                        >
+                            <Terminal size={16} className="mr-2" /> 啟動連線 (Start Connection)
+                        </Button>
                     )}
                 </div>
             </div>

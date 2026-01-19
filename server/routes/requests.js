@@ -48,15 +48,25 @@ router.get('/options', verifyToken, (req, res) => {
 
 // GET Export CSV
 router.get('/export', verifyToken, async (req, res) => {
+    console.log('[Export] CSV Export Request received');
     const { db } = dbExports;
+
+    if (!db) {
+        console.error('[Export] Database instance is missing!');
+        return res.status(500).send('Database not initialized');
+    }
+
     const {
         form_id, start_date, end_date, applicant, department, program_type, file_keyword, status
     } = req.query;
+
+    console.log('[Export] Params:', { form_id, start_date, end_date, applicant, department, program_type, file_keyword, status });
 
     try {
         let sql = `
             SELECT 
                 a.form_id, a.status, a.apply_date, a.program_type, a.db_object_type, a.description, a.dba_comment,
+                a.access_db_user, a.access_start_time, a.access_end_time,
                 u.name as applicant_name, u.department as applicant_dept,
                 m.code as module_code, m.name as module_name,
                 f.original_name, f.description as file_desc, f.db_object_type as file_type, 
@@ -70,14 +80,6 @@ router.get('/export', verifyToken, async (req, res) => {
         `;
 
         const params = [];
-
-
-        // Role Filter - REMOVED to allow global visibility
-
-        // if (req.user.role === 'user') {
-        //     sql += ` AND a.applicant_id = ? `;
-        //     params.push(req.user.id);
-        // }
 
         // Search Filters
         if (status && status !== 'all') {
@@ -120,7 +122,9 @@ router.get('/export', verifyToken, async (req, res) => {
 
         sql += ` ORDER BY a.created_at DESC`;
 
+        console.log('[Export] Executing SQL...');
         const rows = db.prepare(sql).all(params);
+        console.log(`[Export] Found ${rows.length} rows`);
 
         // Transform Data
         const statusMap = {
@@ -144,14 +148,9 @@ router.get('/export', verifyToken, async (req, res) => {
             } catch (e) { return iso; }
         };
 
-        const path = require('path');
-
         const formattedRows = rows.map(row => {
             let backupFileName = '';
             if (row.backup_file_path) {
-                // Extract filename only. 
-                // Note: path.basename might vary based on OS separators if path comes from different OS.
-                // Standardize: split by / or \ and take last.
                 backupFileName = row.backup_file_path.split(/[/\\]/).pop();
             }
 
@@ -161,10 +160,13 @@ router.get('/export', verifyToken, async (req, res) => {
                 apply_date: formatTime(row.apply_date),
                 uploaded_at: formatTime(row.uploaded_at),
                 backup_at: formatTime(row.backup_at),
-                backup_filename: backupFileName
+                backup_filename: backupFileName,
+                access_start_time: formatTime(row.access_start_time),
+                access_end_time: formatTime(row.access_end_time)
             };
         });
 
+        console.log('[Export] Require ExcelJS...');
         const ExcelJS = require('exceljs');
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Requests');
@@ -189,21 +191,27 @@ router.get('/export', verifyToken, async (req, res) => {
             { header: 'Schema', key: 'file_schema', width: 15 },
             { header: '檔案版本', key: 'file_ver', width: 10 },
             { header: '檔案物件類型', key: 'file_type', width: 15 },
+            // New Fields for Terminal Access
+            { header: '目標 DB 帳號', key: 'access_db_user', width: 15 },
+            { header: '連線開始時間', key: 'access_start_time', width: 20 },
+            { header: '連線結束時間', key: 'access_end_time', width: 20 },
         ];
 
         formattedRows.forEach(row => {
             worksheet.addRow(row);
         });
 
+        console.log('[Export] Writing to response...');
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', 'attachment; filename=requests_export.csv');
 
         await workbook.csv.write(res);
+        console.log('[Export] Complete');
         res.end();
 
     } catch (e) {
-        console.error(e);
-        res.status(500).send('Export failed');
+        console.error('[Export] Error:', e);
+        res.status(500).send('Export failed: ' + e.message);
     }
 });
 
@@ -354,30 +362,35 @@ router.get('/:id', verifyToken, (req, res) => {
 // CREATE Request
 router.post('/', verifyToken, (req, res) => {
     const { db } = dbExports;
-    const { module_id, program_type, db_object_type, description, files } = req.body;
-    // files here might be descriptions updates? No, file upload happens separately or we link them?
-    // Let's assume File Upload happens AFTER ID creation? Or we create Draft first?
-    // Prompt says: "表單主畫面應該多一個檔案列表清單... 並且建立每個檔案時還可以針對每個檔案另外輸入申請說明"
-    // This implies we have a Form ID (Application) to link files to.
-    // So flow:
-    // 1. User fills basic info (Module, Type) -> Click "Save/Next" -> Create `application`.
-    // 2. User sees "Upload" button -> Uploads file -> Saved to `application_files`.
+    const { module_id, program_type, db_object_type, description, agent_flow_id, access_db_user, access_start_time, access_end_time } = req.body;
 
-    if (!module_id || !program_type) {
+    if ((!module_id && program_type !== 'Terminal Access') || !program_type) {
         return res.status(400).json({ error: 'Module and Type are required' });
     }
 
     try {
-        // Get Module Code
-        const mod = db.prepare('SELECT code FROM erp_modules WHERE id = ?').get(module_id);
-        if (!mod) return res.status(400).json({ error: 'Invalid Module' });
+        let modCode = 'TERM';
+        // Get Module Code if module_id exists
+        if (module_id) {
+            const mod = db.prepare('SELECT code FROM erp_modules WHERE id = ?').get(module_id);
+            if (!mod) return res.status(400).json({ error: 'Invalid Module' });
+            modCode = mod.code;
+        }
 
-        const formId = generateFormId(db, mod.code); // Generate ID
+        const formId = generateFormId(db, modCode); // Generate ID
 
         const info = db.prepare(`
-            INSERT INTO applications (form_id, applicant_id, apply_date, module_id, program_type, db_object_type, description, agent_flow_id, has_tested, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
-        `).run(formId, req.user.id, new Date().toISOString(), module_id, program_type, db_object_type, description || '', req.body.agent_flow_id || null, req.body.has_tested ? 1 : 0);
+            INSERT INTO applications (
+                form_id, applicant_id, apply_date, module_id, program_type, db_object_type, description, 
+                agent_flow_id, has_tested, status,
+                access_db_user, access_start_time, access_end_time
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)
+        `).run(
+            formId, req.user.id, new Date().toISOString(), module_id || null, program_type, db_object_type, description || '',
+            agent_flow_id || null, req.body.has_tested ? 1 : 0,
+            access_db_user || null, access_start_time || null, access_end_time || null
+        );
 
         res.json({ id: info.lastInsertRowid, form_id: formId });
     } catch (e) {
@@ -390,10 +403,7 @@ router.post('/', verifyToken, (req, res) => {
 router.put('/:id', verifyToken, (req, res) => {
     const { db } = dbExports;
     const { id } = req.params;
-    const { module_id, program_type, db_object_type, description, has_tested } = req.body;
-
-    // Check status? Only draft can be edited?
-    // "開立:開單到送簽前的狀態"
+    const { module_id, program_type, db_object_type, description, has_tested, agent_flow_id, access_db_user, access_start_time, access_end_time } = req.body;
 
     try {
         const app = db.prepare('SELECT status, applicant_id FROM applications WHERE id = ?').get(id);
@@ -410,9 +420,17 @@ router.put('/:id', verifyToken, (req, res) => {
 
         db.prepare(`
             UPDATE applications 
-            SET module_id = ?, program_type = ?, db_object_type = ?, description = ?, agent_flow_id = ?, has_tested = ?, updated_at = CURRENT_TIMESTAMP
+            SET module_id = ?, program_type = ?, db_object_type = ?, description = ?, 
+                agent_flow_id = ?, has_tested = ?, 
+                access_db_user = ?, access_start_time = ?, access_end_time = ?,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        `).run(module_id, program_type, db_object_type, description, req.body.agent_flow_id || null, has_tested ? 1 : 0, id);
+        `).run(
+            module_id || null, program_type, db_object_type, description,
+            agent_flow_id || null, has_tested ? 1 : 0,
+            access_db_user || null, access_start_time || null, access_end_time || null,
+            id
+        );
 
         res.json({ success: true });
     } catch (e) {
@@ -510,18 +528,25 @@ router.put('/:id/status', verifyToken, async (req, res) => {
             const isApprover = stepApprovers.some(a => a.user_id === req.user.id);
 
             // Allow Admin to bypass permission check, BUT logic still needs to flow steps
+            // Also allow DBA to "approve" (update) if status is already approved (e.g. Terminal Access time update)
+            const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
+
             if (!isApprover && req.user.role !== 'admin') {
-                return res.status(403).json({ error: 'Unauthorized: You are not the approver for this step' });
+                if (!(app.status === 'approved' && isDBA)) {
+                    return res.status(403).json({ error: 'Unauthorized: You are not the approver for this step' });
+                }
             }
 
-            if (app.status !== 'reviewing') return res.status(400).json({ error: 'Request is not in reviewing status' });
+            if (app.status !== 'reviewing' && !(app.status === 'approved' && isDBA)) {
+                return res.status(400).json({ error: 'Request is not in reviewing status' });
+            }
 
             // 6. Transition
             // Check if there is a next step
             // Find max step
             const maxStep = approvers.length > 0 ? Math.max(...approvers.map(a => a.step_order)) : 0;
 
-            if (currentStep < maxStep) {
+            if (currentStep < maxStep && app.status === 'reviewing') {
                 // Move to next step
                 // Update current_step + 1
                 db.prepare('UPDATE applications SET current_step = ? WHERE id = ?').run(currentStep + 1, id);
@@ -575,15 +600,30 @@ router.put('/:id/status', verifyToken, async (req, res) => {
         }
 
         // Update App
-        const stmt = db.prepare(`
-            UPDATE applications 
-            SET status = ?, updated_at = CURRENT_TIMESTAMP
-            ${dbaComment ? ', dba_comment = ?' : ''}
-            WHERE id = ?
-        `);
+        // Allow updating access time window during status change (e.g. DBA modifying time)
+        const { access_start_time, access_end_time } = req.body;
 
-        if (dbaComment) stmt.run(newStatus, dbaComment, id);
-        else stmt.run(newStatus, id);
+        let sql = `UPDATE applications SET status = ?, updated_at = CURRENT_TIMESTAMP`;
+        const params = [newStatus];
+
+        if (dbaComment) {
+            sql += `, dba_comment = ?`;
+            params.push(dbaComment);
+        }
+
+        if (access_start_time !== undefined) {
+            sql += `, access_start_time = ?`;
+            params.push(access_start_time);
+        }
+        if (access_end_time !== undefined) {
+            sql += `, access_end_time = ?`;
+            params.push(access_end_time);
+        }
+
+        sql += ` WHERE id = ?`;
+        params.push(id);
+
+        db.prepare(sql).run(...params);
 
         // Log Review
         if (action !== 'submit') { // Log approval/rejection/online actions

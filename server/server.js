@@ -5,11 +5,20 @@ const path = require('path');
 const fs = require('fs');
 const db = require('./database');
 const oracleRoutes = require('./routes/oracle'); // Added for new route
+const http = require('http'); // Added for socket.io
 
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
+const server = http.createServer(app); // Create HTTP server
+const io = require('socket.io')(server, { // Initialize socket.io
+    cors: {
+        origin: '*', // Adjust for production
+        methods: ["GET", "POST"]
+    }
+});
+require('./sockets/terminalSocket')(io); // Initialize Terminal Socket Namespace
 const PORT = process.env.PORT || 3003;
 
 // Security Middleware
@@ -105,7 +114,7 @@ db.init().then(() => {
     const backupService = require('./services/backupService');
     backupService.init();
 
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
         console.log(`Access URL: ${process.env.APP_URL || `http://localhost:${PORT}`}`);
     });

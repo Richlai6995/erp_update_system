@@ -6,13 +6,15 @@ import type { ERPModule } from '../types';
 import { Package, Edit, PlusCircle, Database, Save, Play, Download, Trash2, Upload, AlertTriangle, RefreshCw, Mail, Lock, Server, Users } from 'lucide-react';
 import { Input } from './ui/Input';
 
+import { DBUserManagement } from './DBUserManagement';
+
 interface SystemManagementProps {
     isOpen: boolean;
     onClose: () => void;
 }
 
 export const SystemManagement: React.FC<SystemManagementProps> = ({ isOpen, onClose }) => {
-    const [activeTab, setActiveTab] = useState<'db' | 'departments' | 'db-objects' | 'mail' | 'erp' | 'env'>('departments');
+    const [activeTab, setActiveTab] = useState<'db' | 'departments' | 'db-objects' | 'mail' | 'erp' | 'env' | 'db-users'>('departments');
 
     // ERP Modules State
     const [modules, setModules] = useState<ERPModule[]>([]);
@@ -585,7 +587,16 @@ export const SystemManagement: React.FC<SystemManagementProps> = ({ isOpen, onCl
                     >
                         環境變數 (Env)
                     </button>
+                    <button
+                        className={`px-4 py-2 text-sm font-medium whitespace-nowrap ${activeTab === 'db-users' ? 'text-brand-600 border-b-2 border-brand-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        onClick={() => setActiveTab('db-users')}
+                    >
+                        DB 連線帳號
+                    </button>
                 </div>
+
+                {activeTab === 'db-users' && <DBUserManagement />}
+
 
                 {activeTab === 'departments' && (
                     <div className="space-y-4">

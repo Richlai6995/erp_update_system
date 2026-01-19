@@ -272,4 +272,68 @@ router.post('/backup/run', verifyToken, checkAdmin, (req, res) => {
     }
 });
 
+// --- DB Users Credential Management ---
+const DB_USERS_CONFIG_PATH = path.join(__dirname, '../config/db_users.json');
+
+// GET /api/admin/settings/db-users
+// Allow all authenticated users to see available DB users for selection
+router.get('/settings/db-users', verifyToken, (req, res) => {
+    try {
+        if (!fs.existsSync(DB_USERS_CONFIG_PATH)) {
+            return res.json([]);
+        }
+        const data = fs.readFileSync(DB_USERS_CONFIG_PATH, 'utf8');
+        const users = JSON.parse(data);
+        // Mask passwords before sending to UI
+        const safeUsers = users.map(u => ({
+            id: u.id,
+            username: u.username,
+            description: u.description,
+            // Don't send password
+        }));
+        res.json(safeUsers);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/admin/settings/db-users
+router.post('/settings/db-users', verifyToken, checkAdmin, (req, res) => {
+    try {
+        const newUsers = req.body; // Expect array of user objects
+        if (!Array.isArray(newUsers)) return res.status(400).json({ error: "Invalid data format" });
+
+        // If updating, preserve passwords if not changed (UI should send empty password if unchanged)
+        // Actually, UI usually sends full list.
+        // Strategy:
+        // 1. Read existing
+        // 2. For each new user, if password provided -> update. If empty -> keep existing (if exists).
+
+        let existingUsers = [];
+        if (fs.existsSync(DB_USERS_CONFIG_PATH)) {
+            existingUsers = JSON.parse(fs.readFileSync(DB_USERS_CONFIG_PATH, 'utf8'));
+        }
+
+        const mergedUsers = newUsers.map(u => {
+            if (u.password) return u; // New password provided
+            const existing = existingUsers.find(e => e.id === u.id);
+            if (existing) {
+                return { ...u, password: existing.password }; // Keep existing
+            }
+            // New user but no password? Invalid.
+            return u;
+        });
+
+        // Ensure directory exists
+        const dir = path.dirname(DB_USERS_CONFIG_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+        fs.writeFileSync(DB_USERS_CONFIG_PATH, JSON.stringify(mergedUsers, null, 2));
+        res.json({ success: true, message: "DB Users updated" });
+
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 module.exports = router;

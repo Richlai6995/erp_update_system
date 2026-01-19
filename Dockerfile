@@ -19,7 +19,8 @@ RUN npm run build
 FROM node:20-slim AS runner
 
 # Install Oracle Client dependencies (libaio1 is required for Thick Mode)
-RUN apt-get update && apt-get install -y libaio1 && rm -rf /var/lib/apt/lists/*
+# Install build tools for node-pty (python3, make, g++, build-essential)
+RUN apt-get update && apt-get install -y libaio1 python3 make g++ build-essential && rm -rf /var/lib/apt/lists/*
 
 # Install Timezone Data (Debian uses tzdata too, but installation is different usually, but node:20-slim might have it or standard way)
 ENV TZ=Asia/Taipei

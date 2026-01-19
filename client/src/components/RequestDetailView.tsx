@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-    CheckCircle, Clock, FileText, Upload, Trash2,
-    Send, XCircle, AlertCircle, CheckSquare
-} from 'lucide-react';
+import { ArrowLeft, Edit, Save, Trash2, CheckCircle, XCircle, Clock, FileText, Download, RotateCcw, Send, Play, Paperclip, Terminal, Upload, CheckSquare, AlertCircle } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Modal } from './ui/Modal';
 import { Input } from './ui/Input';
@@ -197,6 +194,13 @@ export const RequestDetailView: React.FC<RequestDetailViewProps> = ({ project, u
                         {project.status === 'draft' && (user.id === project.manager_id || user.role === 'admin') && (
                             <Button size="sm" onClick={() => setIsUploadModalOpen(true)}>
                                 <Upload size={16} className="mr-2" /> 新增檔案
+                            </Button>
+                        )}
+
+                        {/* Terminal Access Button */}
+                        {project.program_type === 'Terminal Access' && project.status === 'approved' && (
+                            <Button onClick={() => window.open(`/terminal/${project.id}`, '_blank')} className="bg-black hover:bg-slate-800 text-white">
+                                <Terminal size={16} className="mr-2" /> 開啟終端機 (SQL Web Terminal)
                             </Button>
                         )}
                     </div>
