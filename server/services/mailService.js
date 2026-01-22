@@ -2,6 +2,16 @@ const nodemailer = require('nodemailer');
 const dbWrapper = require('../database');
 const fs = require('fs');
 const path = require('path');
+const jwt = require('jsonwebtoken');
+
+// JWT Secret - Should be in ENV, fallback for dev
+const JWT_SECRET = process.env.JWT_SECRET || 'erp_update_system_secret_key_2024';
+const API_URL = process.env.API_URL || 'http://localhost:3000'; // Backend URL
+
+// Helper: Generate Magic Link Token (Valid for 7 days)
+function generateApprovalToken(userId, requestId, action) {
+    return jwt.sign({ userId, requestId, action }, JWT_SECRET, { expiresIn: '7d' });
+}
 
 // Helper to extract base64 images and convert to CIDs
 function processHtmlImages(html) {
@@ -243,7 +253,29 @@ async function getRecipientsByRole(roleCriteria) {
     return recipients.map(u => u.email).filter(e => e); // Return emails
 }
 
-function generateEmailHtml(request, files) {
+function generateActionButtons(approveLink, rejectLink) {
+    if (!approveLink && !rejectLink) return '';
+
+    return `
+    <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border: 1px dashed #ccc; text-align: center; border-radius: 8px;">
+        <h3 style="margin-top: 0; color: #555;">快速簽核 (Quick Action)</h3>
+        <p style="font-size: 14px; color: #666; margin-bottom: 15px;">您可以在此直接核准或退回申請單，無需登入系統。</p>
+        
+        <div style="display: flex; justify-content: center; gap: 20px;">
+            <a href="${approveLink}" style="background-color: #28a745; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+                ✅ 核准 (Approve)
+            </a>
+            
+            <a href="${rejectLink}" style="background-color: #dc3545; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+                ❌ 退回 (Reject)
+            </a>
+        </div>
+        <p style="font-size: 12px; color: #999; margin-top: 15px;">此連結有效期為 7 天。</p>
+    </div>
+    `;
+}
+
+function generateEmailHtml(request, files, actionLinks = {}) {
     // request: { form_id, applicant_name, apply_date, module_code, program_type, agent_flow_id, description }
     // files: [{ original_name, description, db_object_type, file_version }]
 
@@ -255,6 +287,8 @@ function generateEmailHtml(request, files) {
             <td style="padding: 8px; border: 1px solid #ddd;">${f.description || ''}</td>
         </tr>
     `).join('');
+
+    const actionButtons = generateActionButtons(actionLinks.approve, actionLinks.reject);
 
     return `
 <!DOCTYPE html>
@@ -298,6 +332,8 @@ function generateEmailHtml(request, files) {
         </tbody>
     </table>
 
+    ${actionButtons}
+
     <div style="margin-top: 20px; text-align: center;">
         <a href="${process.env.APP_URL || 'http://localhost:5173'}/requests/${request.id}" 
            style="background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">
@@ -330,20 +366,47 @@ async function sendSignerNotification(requestId, executorName, nextApproverId = 
 
     const files = db.prepare(`SELECT * FROM application_files WHERE application_id = ?`).all(requestId);
 
-    const html = generateEmailHtml(request, files);
-    const subject = `ERP程式變更申請[待簽核通知] 申請單: ${request.form_id} - ${request.module_code} (${request.applicant_name})`;
 
     let recipients = [];
+    let approverUser = null;
+
     if (nextApproverId) {
         // Specific Approver (Flow-Based)
-        const approver = db.prepare('SELECT email FROM users WHERE id = ?').get(nextApproverId);
-        if (approver && approver.email) {
-            recipients.push(approver.email);
+        approverUser = db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(nextApproverId);
+        if (approverUser && approverUser.email) {
+            recipients.push(approverUser.email);
         }
     } else {
-        // Fallback: Notify 'manager' role (Legacy)
+        // Fallback: Notify 'manager' role (Legacy) - Hard to generate token for group...
+        // Maybe we just don't offer magic links for broadcast emails, or we generate one for 'admin'? 
+        // Logic says we usually have specific approver now.
         recipients = await getRecipientsByRole('manager');
+        // If broadcast, we can't easily make a user-specific token unless we iterate.
+        // For simplicity, if broadcast, no magic links? Or magic link with generic user?
+        // Let's safe-guard: if !approverUser, no action links.
     }
+
+    // Generate Magic Links if single approver
+    let actionLinks = {};
+    if (approverUser) {
+        const approveToken = generateApprovalToken(approverUser.id, request.id, 'approve');
+        const rejectToken = generateApprovalToken(approverUser.id, request.id, 'reject');
+
+        actionLinks = {
+            approve: `${API_URL}/api/public/approve?token=${approveToken}`,
+            reject: `${API_URL}/api/public/reject?token=${rejectToken}` // Reject usually needs comment, so this might redirect to a form?
+            // For simplify: GET reject -> Updates status to rejected (no comment) or shows a simple HTML form?
+            // The implementation plan mainly said "Approve/Reject". 
+            // If we want comment, the link should open a page with a box. 
+            // For now, let's make it a direct reject or a page that asks for confirmation? 
+            // Let's assume direct for MVP, or better, the link goes to a page that renders the form.
+            // Wait, `processRequestAction` takes a comment.
+            // If I just GET /api/public/reject, it will reject with empty comment.
+        };
+    }
+
+    const html = generateEmailHtml(request, files, actionLinks);
+    const subject = `ERP程式變更申請[待簽核通知] 申請單: ${request.form_id} - ${request.module_code} (${request.applicant_name})`;
 
     if (recipients.length === 0) {
         console.warn('No Signer recipients found.');
@@ -376,10 +439,12 @@ async function sendDBANotification(requestId, executorName) {
 
     const files = db.prepare(`SELECT * FROM application_files WHERE application_id = ?`).all(requestId);
 
+    // Logic: Notify users with 'dba' in role (Or Admin)
+    // Multicast. We can't generate unique tokens for everyone in one email.
+    // So no magic links for DBA broadcast. They should log in to execute DDL anyway.
     const html = generateEmailHtml(request, files);
     const subject = `ERP程式變更申請[待執行通知] 申請單: ${request.form_id} - 已核准 (${request.module_code})`;
 
-    // Logic: Notify users with 'dba' in role (Or Admin)
     const recipients = await getRecipientsByRole('dba');
     if (recipients.length === 0) {
         console.warn('No DBA recipients found.');
@@ -457,6 +522,53 @@ async function scheduleCleanupTask() {
     });
 }
 
+// Notify Original Approver (When Proxy signs)
+async function sendProxyNotification(requestId, originalApproverUsername, proxyName, originalApproverId) {
+    const db = await dbWrapper.init();
+
+    // Get Original Approver Email
+    let approver = null;
+    if (originalApproverId) {
+        approver = db.prepare('SELECT email, name FROM users WHERE id = ?').get(originalApproverId);
+    } else if (originalApproverUsername) {
+        approver = db.prepare('SELECT email, name FROM users WHERE username = ?').get(originalApproverUsername);
+    }
+
+    if (!approver || !approver.email) {
+        console.warn(`[Mail] Cannot notify proxy target ${originalApproverUsername}: No email found.`);
+        return;
+    }
+
+    const request = db.prepare(`
+        SELECT r.*, u.name as applicant_name, m.code as module_code
+        FROM applications r
+        LEFT JOIN users u ON r.applicant_id = u.id
+        LEFT JOIN erp_modules m ON r.module_id = m.id
+        WHERE r.id = ?
+    `).get(requestId);
+
+    if (!request) return;
+
+    const files = db.prepare(`SELECT * FROM application_files WHERE application_id = ?`).all(requestId);
+    const html = generateEmailHtml(request, files); // Reuse base HTML
+
+    // Add specific message
+    const msg = `您的代理人 <strong>${proxyName}</strong> 已代您完成了此申請單的簽核。`;
+    const modifiedHtml = html.replace('<body>', `<body><div style="padding: 15px; background-color: #e0f2fe; border: 1px solid #bae6fd; margin-bottom: 20px; color: #0369a1;"><strong>${msg}</strong></div>`);
+
+    const subject = `ERP程式變更申請[代理簽核通知] 申請單: ${request.form_id} (由 ${proxyName} 代理)`;
+
+    await sendEmail({
+        to: approver.email,
+        subject: subject,
+        html: modifiedHtml,
+        executor: 'System',
+        fileName: request.program_type || 'Form',
+        projectName: request.form_id,
+        pathInfo: '通知代理主審核人'
+    });
+}
+
 module.exports = {
     sendEmail,
     setRetentionDays,
@@ -467,5 +579,6 @@ module.exports = {
     sendSignerNotification,
     sendDBANotification,
     sendApplicantNotification,
+    sendProxyNotification,
     scheduleCleanupTask
 };

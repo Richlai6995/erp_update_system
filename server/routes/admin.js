@@ -87,7 +87,6 @@ router.post('/settings/env', verifyToken, checkAdmin, (req, res) => {
 // --- DB Object Types Routes ---
 
 // GET /api/admin/settings/db-object-types
-// GET /api/admin/settings/db-object-types
 router.get('/settings/db-object-types', verifyToken, (req, res) => {
     try {
         const db = require('../database').db;

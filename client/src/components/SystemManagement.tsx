@@ -7,6 +7,8 @@ import { Package, Edit, PlusCircle, Database, Save, Play, Download, Trash2, Uplo
 import { Input } from './ui/Input';
 
 import { DBUserManagement } from './DBUserManagement';
+import DatePicker from 'react-datepicker';
+import "react-datepicker/dist/react-datepicker.css";
 
 interface SystemManagementProps {
     isOpen: boolean;
@@ -53,6 +55,7 @@ export const SystemManagement: React.FC<SystemManagementProps> = ({ isOpen, onCl
     const [isApproverModalOpen, setIsApproverModalOpen] = useState(false);
     const [selectedDeptForApprovers, setSelectedDeptForApprovers] = useState<any | null>(null);
     const [approvers, setApprovers] = useState<any[]>([]); // Current editing list
+    const [editingProxyIndex, setEditingProxyIndex] = useState<number | null>(null);
 
     // DB Object Types State
     const [dbObjectTypes, setDbObjectTypes] = useState<any[]>([]);
@@ -170,6 +173,17 @@ export const SystemManagement: React.FC<SystemManagementProps> = ({ isOpen, onCl
             const u = users.find(u => u.id === parseInt(value));
             if (u) newApps[index].username = u.username;
         }
+        setApprovers(newApps);
+    };
+
+    const handleClearProxy = (index: number) => {
+        const newApps = [...approvers];
+        newApps[index] = {
+            ...newApps[index],
+            proxy_user_id: null,
+            proxy_start_date: null,
+            proxy_end_date: null
+        };
         setApprovers(newApps);
     };
 
@@ -1217,50 +1231,88 @@ export const SystemManagement: React.FC<SystemManagementProps> = ({ isOpen, onCl
                     <div className="mb-4 text-sm text-slate-500">
                         設定此部門的簽核順序。系統將依照順序進行簽核通知。
                     </div>
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                    <div className="space-y-4 max-h-[400px] overflow-y-auto">
                         {approvers.map((app, index) => (
-                            <div key={index} className="flex gap-2 items-end border p-3 rounded bg-slate-50">
-                                <div className="w-16">
-                                    <label className="text-xs font-bold text-slate-500 block mb-1">順序</label>
-                                    <input
-                                        type="number"
-                                        className="w-full px-2 py-1 border rounded text-center text-sm"
-                                        value={app.step_order}
-                                        onChange={(e) => handleApproverChange(index, 'step_order', parseInt(e.target.value))}
-                                    />
+                            <div key={index} className="border p-3 rounded bg-slate-50 space-y-2">
+                                <div className="flex gap-2 items-end">
+                                    <div className="w-16">
+                                        <label className="text-xs font-bold text-slate-500 block mb-1">順序</label>
+                                        <input
+                                            type="number"
+                                            className="w-full px-2 py-1 border rounded text-center text-sm"
+                                            value={app.step_order}
+                                            onChange={(e) => handleApproverChange(index, 'step_order', parseInt(e.target.value))}
+                                        />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="text-xs font-bold text-slate-500 block mb-1">簽核人員</label>
+                                        <select
+                                            className="w-full px-2 py-1 border rounded text-sm"
+                                            value={app.user_id || ''}
+                                            onChange={(e) => handleApproverChange(index, 'user_id', e.target.value)}
+                                        >
+                                            <option value="">請選擇人員...</option>
+                                            {users.map(u => (
+                                                <option key={u.id} value={u.id}>{u.username} ({u.name})</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col items-center px-2">
+                                        <label className="text-xs font-bold text-slate-500 block mb-1">通知</label>
+                                        <input
+                                            type="checkbox"
+                                            checked={app.notify}
+                                            onChange={(e) => handleApproverChange(index, 'notify', e.target.checked)}
+                                        />
+                                    </div>
+                                    <div className="flex flex-col items-center px-2">
+                                        <label className="text-xs font-bold text-slate-500 block mb-1">有效</label>
+                                        <input
+                                            type="checkbox"
+                                            checked={app.active !== 0 && app.active !== false}
+                                            onChange={(e) => handleApproverChange(index, 'active', e.target.checked)}
+                                        />
+                                    </div>
+                                    <Button size="sm" variant="ghost" className="text-red-500 mb-0.5" onClick={() => handleRemoveApproverRow(index)}>
+                                        <Trash2 size={16} />
+                                    </Button>
                                 </div>
-                                <div className="flex-1">
-                                    <label className="text-xs font-bold text-slate-500 block mb-1">簽核人員</label>
-                                    <select
-                                        className="w-full px-2 py-1 border rounded text-sm"
-                                        value={app.user_id || ''}
-                                        onChange={(e) => handleApproverChange(index, 'user_id', e.target.value)}
-                                    >
-                                        <option value="">請選擇人員...</option>
-                                        {users.map(u => (
-                                            <option key={u.id} value={u.id}>{u.username} ({u.name})</option>
-                                        ))}
-                                    </select>
+
+                                {/* Proxy Display & Toggle */}
+                                <div className="flex items-center gap-2 pl-2 border-l-2 border-slate-200">
+                                    <span className="text-xs font-bold text-slate-500">代理設定:</span>
+                                    {app.proxy_user_id ? (
+                                        <div className="flex items-center gap-2 flex-1">
+                                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                                                {users.find(u => u.id == app.proxy_user_id)?.username || `User ${app.proxy_user_id}`}
+                                            </span>
+                                            <span className="text-xs text-slate-400">
+                                                {app.proxy_start_date ? new Date(app.proxy_start_date).toLocaleDateString() : 'Now'}
+                                                ~
+                                                {app.proxy_end_date ? new Date(app.proxy_end_date).toLocaleDateString() : 'Forever'}
+                                            </span>
+                                            <button
+                                                onClick={() => setEditingProxyIndex(index)}
+                                                className="text-xs text-blue-600 underline ml-auto"
+                                            >
+                                                修改
+                                            </button>
+                                            <button
+                                                onClick={() => handleClearProxy(index)}
+                                                className="text-xs text-red-500 hover:text-red-700"
+                                            >
+                                                <Trash2 size={12} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => setEditingProxyIndex(index)}
+                                            className="text-xs text-slate-400 hover:text-blue-600 flex items-center gap-1"
+                                        >
+                                            + 新增代理人
+                                        </button>
+                                    )}
                                 </div>
-                                <div className="flex flex-col items-center px-2">
-                                    <label className="text-xs font-bold text-slate-500 block mb-1">通知</label>
-                                    <input
-                                        type="checkbox"
-                                        checked={app.notify}
-                                        onChange={(e) => handleApproverChange(index, 'notify', e.target.checked)}
-                                    />
-                                </div>
-                                <div className="flex flex-col items-center px-2">
-                                    <label className="text-xs font-bold text-slate-500 block mb-1">有效</label>
-                                    <input
-                                        type="checkbox"
-                                        checked={app.active !== 0 && app.active !== false}
-                                        onChange={(e) => handleApproverChange(index, 'active', e.target.checked)}
-                                    />
-                                </div>
-                                <Button size="sm" variant="ghost" className="text-red-500 mb-0.5" onClick={() => handleRemoveApproverRow(index)}>
-                                    <Trash2 size={16} />
-                                </Button>
                             </div>
                         ))}
                     </div>
@@ -1268,6 +1320,72 @@ export const SystemManagement: React.FC<SystemManagementProps> = ({ isOpen, onCl
                         <PlusCircle size={14} className="mr-1" /> 新增簽核關卡
                     </Button>
                 </div>
+            </Modal>
+
+            {/* Proxy Setting Modal */}
+            <Modal
+                isOpen={editingProxyIndex !== null}
+                onClose={() => setEditingProxyIndex(null)}
+                title="設定代理人"
+                className="max-w-md"
+                footer={
+                    <Button onClick={() => setEditingProxyIndex(null)}>完成</Button>
+                }
+            >
+                {editingProxyIndex !== null && approvers[editingProxyIndex] && (
+                    <div className="space-y-4">
+                        <div className="bg-blue-50 p-3 rounded text-xs text-blue-700 mb-2">
+                            當此簽核人員無法簽核時，代理人可代為執行簽核。設定期限後，系統會自動在期限內允許代理人簽核。
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 block mb-1">選擇代理人</label>
+                            <select
+                                className="w-full px-3 py-2 border rounded text-sm"
+                                value={approvers[editingProxyIndex].proxy_user_id || ''}
+                                onChange={(e) => handleApproverChange(editingProxyIndex, 'proxy_user_id', e.target.value)}
+                            >
+                                <option value="">無代理人</option>
+                                {users.filter(u => u.id != approvers[editingProxyIndex].user_id).map(u => (
+                                    <option key={u.id} value={u.id}>{u.username} ({u.name})</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-sm font-medium text-slate-700 block mb-1">開始時間</label>
+                                <div className="w-full">
+                                    <DatePicker
+                                        selected={approvers[editingProxyIndex].proxy_start_date ? new Date(approvers[editingProxyIndex].proxy_start_date) : null}
+                                        onChange={(date: Date | null) => handleApproverChange(editingProxyIndex, 'proxy_start_date', date ? date.toISOString() : '')}
+                                        showTimeSelect
+                                        timeFormat="HH:mm"
+                                        timeIntervals={60}
+                                        dateFormat="yyyy/MM/dd HH:mm"
+                                        placeholderText="請選擇開始時間..."
+                                        className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm disabled:bg-slate-50"
+                                        wrapperClassName="w-full"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium text-slate-700 block mb-1">結束時間</label>
+                                <div className="w-full">
+                                    <DatePicker
+                                        selected={approvers[editingProxyIndex].proxy_end_date ? new Date(approvers[editingProxyIndex].proxy_end_date) : null}
+                                        onChange={(date: Date | null) => handleApproverChange(editingProxyIndex, 'proxy_end_date', date ? date.toISOString() : '')}
+                                        showTimeSelect
+                                        timeFormat="HH:mm"
+                                        timeIntervals={60}
+                                        dateFormat="yyyy/MM/dd HH:mm"
+                                        placeholderText="請選擇結束時間..."
+                                        className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm disabled:bg-slate-50"
+                                        wrapperClassName="w-full"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </Modal>
 
             {/* Module Edit Modal */}

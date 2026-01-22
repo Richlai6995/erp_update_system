@@ -441,240 +441,29 @@ router.put('/:id', verifyToken, (req, res) => {
 
 // UPDATE STATUS (Submit / Approve / Online)
 router.put('/:id/status', verifyToken, async (req, res) => {
-    const { db } = dbExports;
     const { id } = req.params;
-    // Action: 'submit', 'approve', 'online', 'reject'
     const { action, comment } = req.body;
 
     try {
-        const app = db.prepare(`
-            SELECT apps.*, u.department as applicant_department 
-            FROM applications apps
-            LEFT JOIN users u ON apps.applicant_id = u.id
-            WHERE apps.id = ?
-        `).get(id);
-        if (!app) return res.status(404).json({ error: 'Request not found' });
+        const approvalService = require('../services/approvalService');
+        const result = await approvalService.processRequestAction({
+            requestId: id,
+            user: req.user,
+            action: action,
+            comment: comment
+        });
 
-        let newStatus = app.status;
-        let dbaComment = null;
-
-        const fs = require('fs');
-        const logPath = './debug_permission.txt';
-        const log = (msg) => fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
-
-        if (action === 'submit') {
-            // Security: Ownership
-            if (app.applicant_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
-
-            if (!['draft', 'manager_rejected', 'dba_rejected'].includes(app.status)) return res.status(400).json({ error: 'Cannot submit non-draft' });
-            newStatus = 'reviewing'; // "審核中"
-
-            // Find Applicant's Department
-            // We have `app.applicant_department` (string name). We need ID for `department_approvers`.
-            const dept = db.prepare('SELECT id FROM departments WHERE name = ?').get(app.applicant_department);
-
-            if (!dept) {
-                // Should not happen if data integrity is good, but if dept name changed?
-                // Fallback: If Admin, allow. Else error.
-                if (req.user.role === 'admin') {
-                    // Admin bypass
-                } else {
-                    return res.status(400).json({ error: 'Applicant department system error' });
-                }
-            }
-
-            // Find Step 1 Approver
-            if (dept) {
-                const approvers = db.prepare('SELECT * FROM department_approvers WHERE department_id = ? ORDER BY step_order').all(dept.id);
-                // Step 1
-                const step1 = approvers.find(a => a.step_order === 1 && a.active === 1);
-                if (step1) {
-                    req.nextApproverId = step1.user_id;
-                }
-            }
-        }
-        else if (action === 'approve') {
-            // New Flow-Based Logic
-
-            // 1. Get Applicant Department ID
-            // We have `app.applicant_department` (string name). We need ID for `department_approvers`.
-            const dept = db.prepare('SELECT id FROM departments WHERE name = ?').get(app.applicant_department);
-
-            if (!dept) {
-                // Should not happen if data integrity is good, but if dept name changed?
-                // Fallback: If Admin, allow. Else error.
-                if (req.user.role === 'admin') {
-                    // Admin bypass
-                } else {
-                    return res.status(400).json({ error: 'Applicant department system error' });
-                }
-            }
-
-            // 2. Get Approvers
-            let approvers = [];
-            if (dept) {
-                approvers = db.prepare('SELECT * FROM department_approvers WHERE department_id = ? ORDER BY step_order').all(dept.id);
-            }
-
-            // 3. Determine Current Step (Default 1 if null)
-            let currentStep = app.current_step || 1;
-
-            // 4. Find Approver for Current Step
-            // There could be multiple approvers for same step? (Parallel?) 
-            // Current UI implies one per row, but let's filter by step.
-            const stepApprovers = approvers.filter(a => a.step_order === currentStep && a.active === 1);
-
-            // 5. Check Permission
-            const isApprover = stepApprovers.some(a => a.user_id === req.user.id);
-
-            // Allow Admin to bypass permission check, BUT logic still needs to flow steps
-            // Also allow DBA to "approve" (update) if status is already approved (e.g. Terminal Access time update)
-            const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
-
-            if (!isApprover && req.user.role !== 'admin') {
-                if (!(app.status === 'approved' && isDBA)) {
-                    return res.status(403).json({ error: 'Unauthorized: You are not the approver for this step' });
-                }
-            }
-
-            if (app.status !== 'reviewing' && !(app.status === 'approved' && isDBA)) {
-                return res.status(400).json({ error: 'Request is not in reviewing status' });
-            }
-
-            // 6. Transition
-            // Check if there is a next step
-            // Find max step
-            const maxStep = approvers.length > 0 ? Math.max(...approvers.map(a => a.step_order)) : 0;
-
-            if (currentStep < maxStep && app.status === 'reviewing') {
-                // Move to next step
-                // Update current_step + 1
-                db.prepare('UPDATE applications SET current_step = ? WHERE id = ?').run(currentStep + 1, id);
-                // Status remains 'reviewing'
-                newStatus = 'reviewing';
-
-                // Notify NEXT approver
-                const nextStep = currentStep + 1;
-                const nextApprover = approvers.find(a => a.step_order === nextStep && a.active === 1);
-                if (nextApprover) {
-                    req.nextApproverId = nextApprover.user_id;
-                }
-            } else {
-                // Final Step -> Move to Approved (DBA)
-                newStatus = 'approved';
-            }
-        }
-        else if (action === 'reject') {
-            // Security: Manager Role (for Reviewing) or DBA (for Approved) or Admin
-            // If status is reviewing, must be Manager. If approved, must be DBA.
-            if (app.status === 'reviewing') {
-                if (req.user.role !== 'manager' && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized: Managers only' });
-                newStatus = 'manager_rejected';
-            } else if (app.status === 'approved') {
-                if (req.user.role !== 'dba' && !req.user.role.includes('dba') && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized: DBA only' });
-                newStatus = 'dba_rejected';
-            } else {
-                // Fallback or invalid state for reject
-                return res.status(400).json({ error: 'Cannot reject in current status' });
-            }
-        }
-        else if (action === 'void') {
-            // Security: Ownership
-            if (app.applicant_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
-
-            if (!['draft', 'manager_rejected', 'dba_rejected'].includes(app.status)) return res.status(400).json({ error: 'Only draft/rejected can be voided' });
-            newStatus = 'void';
-        }
-        else if (action === 'online') {
-            // Security: DBA Role
-            // Allow 'dba' role or 'admin' 
-            const isDBA = req.user.role === 'dba' || (req.user.role && req.user.role.includes('dba'));
-            if (!isDBA && req.user.role !== 'admin') {
-                return res.status(403).json({ error: 'Unauthorized: DBA only' });
-            }
-
-            if (app.status !== 'approved') return res.status(400).json({ error: 'Request is not approved yet' });
-
-            newStatus = 'online'; // "已上線"
-            dbaComment = comment; // Save DBA final comment
-        }
-
-        // Update App
-        // Allow updating access time window during status change (e.g. DBA modifying time)
-        const { access_start_time, access_end_time } = req.body;
-
-        let sql = `UPDATE applications SET status = ?, updated_at = CURRENT_TIMESTAMP`;
-        const params = [newStatus];
-
-        if (dbaComment) {
-            sql += `, dba_comment = ?`;
-            params.push(dbaComment);
-        }
-
-        if (access_start_time !== undefined) {
-            sql += `, access_start_time = ?`;
-            params.push(access_start_time);
-        }
-        if (access_end_time !== undefined) {
-            sql += `, access_end_time = ?`;
-            params.push(access_end_time);
-        }
-
-        sql += ` WHERE id = ?`;
-        params.push(id);
-
-        db.prepare(sql).run(...params);
-
-        // Log Review
-        if (action !== 'submit') { // Log approval/rejection/online actions
-            db.prepare(`
-                INSERT INTO application_reviews (application_id, reviewer_id, reviewer_name, action, comment)
-                VALUES (?, ?, ?, ?, ?)
-            `).run(id, req.user.id, req.user.name, action, comment || '');
-        }
-
-        // --- EMAIL NOTIFICATIONS ---
-        try {
-            const mailService = require('../services/mailService');
-
-            if (action === 'submit') {
-                // Notify Signer (Manager/Approver)
-                // We passed req.nextApproverId if found
-                await mailService.sendSignerNotification(id, req.user.name, req.nextApproverId);
-            }
-            else if (action === 'approve') {
-                // Determine if this was the final approval -> Notify DBA
-                // In this simplified flow: Draft -> Submitted -> Approved -> Online
-                // "Approve" moves it to 'approved' status, which is the queue for DBA.
-                // So yes, notify DBA.
-
-                // If status is still reviewing, it means we moved to next step. Notify next signer.
-                if (newStatus === 'reviewing' && req.nextApproverId) {
-                    await mailService.sendSignerNotification(id, req.user.name, req.nextApproverId);
-                }
-
-                // Double check status is 'approved'
-                if (newStatus === 'approved') {
-                    await mailService.sendDBANotification(id, req.user.name);
-                }
-            }
-            else if ((action === 'reject' || action === 'manager_reject' || action === 'dba_reject') && (newStatus === 'manager_rejected' || newStatus === 'dba_rejected')) {
-                // Notify Applicant of Rejection
-                await mailService.sendApplicantNotification(id, 'reject', comment);
-            }
-            else if (action === 'online' && newStatus === 'online') {
-                // Notify Applicant of Completion
-                await mailService.sendApplicantNotification(id, 'online', comment);
-            }
-
-        } catch (mailErr) {
-            console.error("Mail Notification Failed:", mailErr);
-        }
-
-        res.json({ success: true, status: newStatus });
+        res.json(result);
     } catch (e) {
         console.error(e);
-        res.status(500).json({ error: 'Status update failed' });
+        // Handle specific errors for better status codes if needed
+        if (e.message === 'Unauthorized' || e.message === 'Unauthorized Approver') {
+            return res.status(403).json({ error: e.message });
+        }
+        if (e.message === 'Request not found') {
+            return res.status(404).json({ error: e.message });
+        }
+        res.status(400).json({ error: e.message || 'Status update failed' });
     }
 });
 

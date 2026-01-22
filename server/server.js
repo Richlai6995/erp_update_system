@@ -4,44 +4,44 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const db = require('./database');
-const oracleRoutes = require('./routes/oracle'); // Added for new route
-const http = require('http'); // Added for socket.io
+const oracleRoutes = require('./routes/oracle');
+const http = require('http');
 
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
-const server = http.createServer(app); // Create HTTP server
-const io = require('socket.io')(server, { // Initialize socket.io
+const server = http.createServer(app);
+const io = require('socket.io')(server, {
     cors: {
-        origin: '*', // Adjust for production
+        origin: '*',
         methods: ["GET", "POST"]
     }
 });
-require('./sockets/terminalSocket')(io); // Initialize Terminal Socket Namespace
+require('./sockets/terminalSocket')(io);
 const PORT = process.env.PORT || 3003;
 
 // Security Middleware
 app.use(helmet({
-    contentSecurityPolicy: false, // Disable default CSP
-    crossOriginEmbedderPolicy: false, // Allow external resources
-    crossOriginOpenerPolicy: false, // Disable COOP (fixes warnings on HTTP)
-    originAgentCluster: false // Disable Origin-Agent-Cluster (fixes warnings on HTTP)
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    originAgentCluster: false
 }));
 
 // Rate Limiting
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 1000, // Limit each IP to 1000 requests per windowMs
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
 });
 app.use(limiter);
 
-// Auth Rate Limiting (Stricter)
+// Auth Rate Limiting
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 50, // Limit login attempts
+    max: 50,
     message: 'Too many login attempts, please try again later.'
 });
 app.use('/api/auth', authLimiter);
@@ -51,32 +51,47 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Debug Middleware: Log all requests
+// Debug Middleware
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
 });
 
-// Routes
-app.use('/api/auth', require('./routes/auth').router);
-app.use('/api/users', require('./routes/users'));
-// app.use('/api/projects', require('./routes/projects')); // Removed
-app.use('/api/requests', require('./routes/requests')); // New
-app.use('/api/uploads', require('./routes/upload')); // New
-app.use('/api/deploy', require('./routes/deploy')); // New Deployment Route
-app.use('/api/compile', require('./routes/compile')); // New Compilation Route
-// app.use('/api/files', require('./routes/files')); // Removed
-// app.use('/api/folders', require('./routes/folders')); // Removed
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/departments', require('./routes/departments'));
-// app.use('/api/groups', require('./routes/groups')); // Keep if needed? Plan said remove strictly old project stuff.
-app.use('/api/erp-modules', require('./routes/erp'));
-app.use('/api/oracle', oracleRoutes); // Register Oracle Routes
+// Import Routes
+const authRoutes = require('./routes/auth');
+const requestRoutes = require('./routes/requests');
+const uploadRoutes = require('./routes/upload');
+const deployRoutes = require('./routes/deploy');
+const adminRoutes = require('./routes/admin');
+const docRoutes = require('./routes/docs');
+const groupsRoutes = require('./routes/groups');
+const erpRoutes = require('./routes/erp');
+const compileRoutes = require('./routes/compile');
+const departmentsRoutes = require('./routes/departments');
+const filesRoutes = require('./routes/files'); // Ensure this file exists, list_dir confirmed it
+const usersRoutes = require('./routes/users');
+
+const publicApprovalRoutes = require('./routes/public_approval'); // New Public Approval
+
+// Register Routes
+app.use('/api/auth', authRoutes.router);
+app.use('/api/files', filesRoutes);
+app.use('/api/requests', requestRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/deploy', deployRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/docs', docRoutes);
+app.use('/api/groups', groupsRoutes);
+app.use('/api/erp-modules', erpRoutes);
+app.use('/api/oracle', oracleRoutes);
+app.use('/api/compile', compileRoutes);
+app.use('/api/departments', departmentsRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/mail', require('./routes/mail'));
-app.use('/api/file-browser', require('./routes/fileBrowser')); // New File Browser Route
-console.log('Registering /api/ai routes...');
-app.use('/api/ai', require('./routes/ai')); // New AI Analysis Route
-app.use('/api/docs', require('./routes/docs')); // New Documentation Route
+app.use('/api/file-browser', require('./routes/fileBrowser'));
+app.use('/api/ai', require('./routes/ai'));
+
+app.use('/api/public', publicApprovalRoutes); // Register Public Routes
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production' || true) {
@@ -86,7 +101,10 @@ if (process.env.NODE_ENV === 'production' || true) {
 
     app.use(express.static(publicPath));
 
+    // Fix for SPA routing
     app.get('*', (req, res) => {
+        if (req.url.startsWith('/api')) return res.status(404).json({ error: 'API Not Found' });
+
         const indexPath = path.join(publicPath, 'index.html');
         if (fs.existsSync(indexPath)) {
             res.sendFile(indexPath);

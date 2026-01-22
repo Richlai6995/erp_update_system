@@ -398,6 +398,28 @@ function initSchema(db) {
       db.exec("ALTER TABLE applications ADD COLUMN access_end_time TEXT");
     }
   } catch (e) { console.error("Migration terminal columns failed:", e); }
+
+  // Department Approvers Table
+  db.exec(`CREATE TABLE IF NOT EXISTS department_approvers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id INTEGER,
+    step_order INTEGER,
+    user_id INTEGER,
+    username TEXT,
+    notify INTEGER DEFAULT 1,
+    active INTEGER DEFAULT 1,
+    FOREIGN KEY(department_id) REFERENCES departments(id) ON DELETE CASCADE
+  )`);
+
+  // Add Proxy Columns to department_approvers
+  try {
+    const daTableInfo = db.prepare("PRAGMA table_info(department_approvers)").all();
+    if (!daTableInfo.some(c => c.name === 'proxy_user_id')) {
+      db.exec("ALTER TABLE department_approvers ADD COLUMN proxy_user_id INTEGER");
+      db.exec("ALTER TABLE department_approvers ADD COLUMN proxy_start_date TEXT");
+      db.exec("ALTER TABLE department_approvers ADD COLUMN proxy_end_date TEXT");
+    }
+  } catch (e) { console.error("Migration proxy columns failed:", e); }
 }
 
 const dbExports = {

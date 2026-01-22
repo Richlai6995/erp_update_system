@@ -116,8 +116,18 @@ router.post('/:id/approvers', (req, res) => {
         // Insert new
         approvers.forEach(app => {
             db.prepare(`INSERT INTO department_approvers 
-            (department_id, step_order, user_id, username, notify, active) 
-            VALUES (?, ?, ?, ?, ?, ?)`).run(id, app.step_order, app.user_id, app.username, app.notify ? 1 : 0, app.active ? 1 : 0);
+            (department_id, step_order, user_id, username, notify, active, proxy_user_id, proxy_start_date, proxy_end_date) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+                id,
+                app.step_order,
+                app.user_id,
+                app.username,
+                app.notify ? 1 : 0,
+                app.active ? 1 : 0,
+                app.proxy_user_id || null,
+                app.proxy_start_date || null,
+                app.proxy_end_date || null
+            );
         });
 
         res.json({ success: true });

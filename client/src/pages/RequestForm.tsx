@@ -213,7 +213,7 @@ export default function RequestForm() {
     };
     const removeExistingFile = async (fileId: number) => {
         if (!confirm('確認刪除?')) return;
-        try { await api.delete(`/uploads/${fileId}`); setExistingFiles(existingFiles.filter(f => f.id !== fileId)); } catch (e) { alert('Failed'); }
+        try { await api.delete(`/upload/${fileId}`); setExistingFiles(existingFiles.filter(f => f.id !== fileId)); } catch (e) { alert('Failed'); }
     };
 
     // Auto Backup Handler
@@ -338,7 +338,7 @@ export default function RequestForm() {
                     formData.append('isBackups', String(item.isBackup));
                     formData.append('backupFilePaths', item.backupFilePath || '');
                 });
-                await api.post(`/uploads/${reqId}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                await api.post(`/upload/${reqId}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
                 setNewFiles([]);
             }
 
@@ -862,7 +862,7 @@ export default function RequestForm() {
                                                             onClick={async () => {
                                                                 try {
                                                                     const token = sessionStorage.getItem('token');
-                                                                    const res = await fetch(`/api/uploads/${file.id}/download`, { headers: { 'Authorization': `Bearer ${token}` } });
+                                                                    const res = await fetch(`/api/upload/${file.id}/download`, { headers: { 'Authorization': `Bearer ${token}` } });
                                                                     if (res.ok) {
                                                                         const blob = await res.blob();
                                                                         const url = window.URL.createObjectURL(blob);
@@ -880,7 +880,7 @@ export default function RequestForm() {
                                                                     onClick={async () => {
                                                                         try {
                                                                             const token = sessionStorage.getItem('token');
-                                                                            const res = await fetch(`/api/uploads/${file.id}/download-backup`, { headers: { 'Authorization': `Bearer ${token}` } });
+                                                                            const res = await fetch(`/api/upload/${file.id}/download-backup`, { headers: { 'Authorization': `Bearer ${token}` } });
                                                                             if (res.ok) {
                                                                                 const blob = await res.blob();
                                                                                 const url = window.URL.createObjectURL(blob);

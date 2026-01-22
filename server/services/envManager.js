@@ -39,7 +39,9 @@ const ALLOWED_KEYS = [
     // ERP Compile
     'ERP_COMPILE_USER', 'ERP_COMPILE_PASSWORD',
     // Oracle DB
-    'ERP_DB_HOST', 'ERP_DB_PORT', 'ERP_DB_SERVICE_NAME', 'ERP_DB_INSTANCE_NAME', 'ERP_DB_USER', 'ERP_DB_USER_PASSWORD'
+    'ERP_DB_HOST', 'ERP_DB_PORT', 'ERP_DB_SERVICE_NAME', 'ERP_DB_INSTANCE_NAME', 'ERP_DB_USER', 'ERP_DB_USER_PASSWORD',
+    // Other
+    'SQLPLUS_PATH'
 ];
 
 exports.getEnvSettings = () => {
@@ -65,23 +67,24 @@ exports.getEnvSettings = () => {
 };
 
 exports.updateEnvSettings = (newSettings) => {
+    console.log('[EnvManager] Updating settings:', Object.keys(newSettings));
+    console.log('[EnvManager] Target ENV_PATH:', ENV_PATH);
+
     let content = '';
     if (fs.existsSync(ENV_PATH)) {
         content = fs.readFileSync(ENV_PATH, 'utf-8');
+    } else {
+        console.warn('[EnvManager] .env file not found, creating new one.');
     }
 
-    const currentEnv = parseEnv(content);
-    const lines = content.split('\n');
+    // Split by new line, handling different line endings
+    let lines = content.split(/\r?\n/);
     const newLines = [];
     const keysUpdated = new Set();
 
-    // Strategy: 
-    // 1. Iterate through existing lines. If key is in newSettings, update line.
-    // 2. If newSettings value is '********', KEEP ORIGINAL value (do not update).
-    // 3. Append new keys that weren't in the file.
-
     for (let line of lines) {
-        if (!line || line.trim().startsWith('#')) {
+        // Keep empty lines or pure comments
+        if (!line.trim() || line.trim().startsWith('#')) {
             newLines.push(line);
             continue;
         }
@@ -89,35 +92,58 @@ exports.updateEnvSettings = (newSettings) => {
         const match = line.match(/^([^=]+)=(.*)$/);
         if (match) {
             const key = match[1].trim();
+            // If this key is in our update list, we replace the line
             if (ALLOWED_KEYS.includes(key) && newSettings.hasOwnProperty(key)) {
+
+                // If we already updated this key (duplicate in file), skip subsequent occurrences to clean up file
+                if (keysUpdated.has(key)) continue;
+
                 const newValue = newSettings[key];
 
-                // If it's a masked password, keep existing line
+                // If it's a masked password, keep existing line (do not update)
+                // UNLESS the user cleared it (empty string)? No, '********' means unchanged.
                 if ((key.includes('PASSWORD') || key.includes('KEY') || key.includes('SECRET')) && newValue === '********') {
+                    console.log(`[EnvManager] Skipping masked password for ${key}`);
                     newLines.push(line);
                 } else {
-                    newLines.push(`${key}="${newValue}"`);
+                    console.log(`[EnvManager] Updating ${key}`);
+                    newLines.push(`${key}=${newValue}`);
+                    // Update process.env immediately for runtime changes
+                    process.env[key] = newValue;
                 }
                 keysUpdated.add(key);
             } else {
+                // Not in allowed keys or not in update payload, keep original
                 newLines.push(line);
             }
         } else {
+            // Malformed line? Keep it.
             newLines.push(line);
         }
     }
 
-    // Append new keys
+    // Append new keys that weren't found in the existing file
     ALLOWED_KEYS.forEach(key => {
         if (newSettings.hasOwnProperty(key) && !keysUpdated.has(key)) {
             const newValue = newSettings[key];
-            // Don't write masked value if it somehow got here for a new key (shouldn't happen usually)
-            if (newValue !== '********') {
-                newLines.push(`${key}="${newValue}"`);
+            if (newValue && newValue !== '********') {
+                console.log(`[EnvManager] Appending new key ${key}`);
+                newLines.push(`${key}=${newValue}`);
+                // Update process.env immediately for runtime changes
+                process.env[key] = newValue;
             }
         }
     });
 
-    fs.writeFileSync(ENV_PATH, newLines.join('\n'), 'utf-8');
-    return true;
+    // Write back with consistent LF (or CRLF if on Windows node, but fs.writeFileSync handles bytes)
+    // We join with \n. On Windows, editors handle it fine usually, or use os.EOL
+    const EOL = require('os').EOL;
+    try {
+        fs.writeFileSync(ENV_PATH, newLines.join(EOL), 'utf-8');
+        console.log('[EnvManager] Successfully wrote .env file');
+        return true;
+    } catch (err) {
+        console.error('[EnvManager] Error writing .env file:', err);
+        throw err;
+    }
 };

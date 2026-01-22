@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -14,7 +14,12 @@ export default function Login() {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const { login } = useAuth();
+
     const navigate = useNavigate();
+    const location = useLocation();
+
+    // Type assertion for state
+    const from = (location.state as any)?.from?.pathname || '/requests';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -26,7 +31,7 @@ export default function Login() {
         try {
             const { data } = await api.post('/auth/login', { username, password });
             login(data.token, data.user);
-            navigate('/requests');
+            navigate(from, { replace: true });
         } catch (err: any) {
             const msg = err.response?.data?.error || '登入失敗';
             if (msg.includes('第一次登入成功')) {
