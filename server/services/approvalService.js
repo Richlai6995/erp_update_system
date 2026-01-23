@@ -166,6 +166,24 @@ async function processRequestAction({
         `).run(newStatus, dbaComment || app.dba_comment, requestId);
     }
 
+    // 3b. Log Review to History (application_reviews)
+    if (['approve', 'reject'].includes(action)) {
+        let finalComment = comment || '';
+        if (proxyForUser) {
+            // Try to find original username/name
+            const original = db.prepare('SELECT name FROM users WHERE id = ?').get(proxyForUser.user_id);
+            if (original) {
+                finalComment = finalComment ? `${finalComment} (Proxy for ${original.name})` : `(Proxy for ${original.name})`;
+            }
+        }
+
+        // Use user.name (The actual person clicking the button)
+        db.prepare(`
+            INSERT INTO application_reviews (application_id, reviewer_id, reviewer_name, action, comment)
+            VALUES (?, ?, ?, ?, ?)
+        `).run(requestId, user.id, user.name, action, finalComment);
+    }
+
     // 4. Notifications
     try {
         if (action === 'submit') {

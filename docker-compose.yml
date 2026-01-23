@@ -29,7 +29,6 @@ services:
       - FILES_ROOT_DIR=/app/local_storage
       - FILES_DIR=/app/local_storage
       - BACKUP_FILES_DIR=/app/backups
-      - APP_URL=http://10.8.93.211:3003
       # Override SQLPLUS_PATH for Linux Container (Windows path in .env will break it)
       - SQLPLUS_PATH=sqlplus
     env_file:

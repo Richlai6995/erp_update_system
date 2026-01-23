@@ -253,26 +253,56 @@ async function getRecipientsByRole(roleCriteria) {
     return recipients.map(u => u.email).filter(e => e); // Return emails
 }
 
-function generateActionButtons(approveLink, rejectLink) {
-    if (!approveLink && !rejectLink) return '';
+function generateActionButtons(links) {
+    if (!links || (!links.internal && !links.approve)) return '';
 
-    return `
+    // Backward compatibility or simple structure
+    const internal = links.internal || { approve: links.approve, reject: links.reject };
+    const external = links.external; // Optional
+
+    let html = `
     <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border: 1px dashed #ccc; text-align: center; border-radius: 8px;">
         <h3 style="margin-top: 0; color: #555;">快速簽核 (Quick Action)</h3>
         <p style="font-size: 14px; color: #666; margin-bottom: 15px;">您可以在此直接核准或退回申請單，無需登入系統。</p>
         
-        <div style="display: flex; justify-content: center; gap: 20px;">
-            <a href="${approveLink}" style="background-color: #28a745; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
-                ✅ 核准 (Approve)
-            </a>
-            
-            <a href="${rejectLink}" style="background-color: #dc3545; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
-                ❌ 退回 (Reject)
-            </a>
+        <div style="margin-bottom: 20px;">
+            <div style="font-weight: bold; margin-bottom: 10px; color: #333;">[內網專用 / Office Network]</div>
+            <div style="display: flex; justify-content: center; gap: 20px;">
+                <a href="${internal.approve}" style="background-color: #28a745; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+                    ✅ 核准 (Approve)
+                </a>
+                
+                <a href="${internal.reject}" style="background-color: #dc3545; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+                    ❌ 退回 (Reject)
+                </a>
+            </div>
         </div>
+    `;
+
+    if (external) {
+        html += `
+        <div style="border-top: 1px solid #ddd; padding-top: 15px; margin-top: 15px;">
+            <div style="font-weight: bold; margin-bottom: 10px; color: #666;">[外部網路專用 / External Network] (via Google Proxy)</div>
+            <div style="display: flex; justify-content: center; gap: 20px;">
+                <a href="${external.approve}" style="background-color: #198754; color: white; padding: 8px 15px; text-decoration: none; border-radius: 4px; font-size: 14px;">
+                    ✅ 外部核准
+                </a>
+                
+                <a href="${external.reject}" style="background-color: #dc3545; color: white; padding: 8px 15px; text-decoration: none; border-radius: 4px; font-size: 14px;">
+                    ❌ 外部退回
+                </a>
+            </div>
+             <p style="font-size: 11px; color: #999; margin-top: 5px;">(若內網連結無法開啟，請使用此連結)</p>
+        </div>
+        `;
+    }
+
+    html += `
         <p style="font-size: 12px; color: #999; margin-top: 15px;">此連結有效期為 7 天。</p>
     </div>
     `;
+
+    return html;
 }
 
 function generateEmailHtml(request, files, actionLinks = {}) {
@@ -288,7 +318,7 @@ function generateEmailHtml(request, files, actionLinks = {}) {
         </tr>
     `).join('');
 
-    const actionButtons = generateActionButtons(actionLinks.approve, actionLinks.reject);
+    const actionButtons = generateActionButtons(actionLinks);
 
     return `
 <!DOCTYPE html>
@@ -392,17 +422,32 @@ async function sendSignerNotification(requestId, executorName, nextApproverId = 
         const approveToken = generateApprovalToken(approverUser.id, request.id, 'approve');
         const rejectToken = generateApprovalToken(approverUser.id, request.id, 'reject');
 
-        actionLinks = {
+        // Direct Internal Access (Always available)
+        const internalLinks = {
             approve: `${API_URL}/api/public/approve?token=${approveToken}`,
-            reject: `${API_URL}/api/public/reject?token=${rejectToken}` // Reject usually needs comment, so this might redirect to a form?
-            // For simplify: GET reject -> Updates status to rejected (no comment) or shows a simple HTML form?
-            // The implementation plan mainly said "Approve/Reject". 
-            // If we want comment, the link should open a page with a box. 
-            // For now, let's make it a direct reject or a page that asks for confirmation? 
-            // Let's assume direct for MVP, or better, the link goes to a page that renders the form.
-            // Wait, `processRequestAction` takes a comment.
-            // If I just GET /api/public/reject, it will reject with empty comment.
+            reject: `${API_URL}/api/public/reject?token=${rejectToken}`
         };
+
+        // Check for GAS Proxy (For external access)
+        const gasProxyUrl = process.env.GAS_PROXY_URL;
+
+        if (gasProxyUrl && gasProxyUrl.includes('script.google.com')) {
+            const externalLinks = {
+                approve: `${gasProxyUrl}?action=approve&token=${approveToken}`,
+                reject: `${gasProxyUrl}?action=reject&token=${rejectToken}`
+            };
+
+            // Pass structure with both
+            actionLinks = {
+                internal: internalLinks,
+                external: externalLinks
+            };
+        } else {
+            // Only internal
+            actionLinks = {
+                internal: internalLinks
+            };
+        }
     }
 
     const html = generateEmailHtml(request, files, actionLinks);

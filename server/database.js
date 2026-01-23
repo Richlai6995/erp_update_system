@@ -208,6 +208,19 @@ function initSchema(db) {
     FOREIGN KEY(application_id) REFERENCES applications(id) ON DELETE CASCADE
   )`);
 
+  // 4. Connection Logs (SQLPlus Terminal Sessions)
+  db.exec(`CREATE TABLE IF NOT EXISTS connection_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER,
+    user_id INTEGER,
+    username TEXT,
+    start_time TEXT DEFAULT CURRENT_TIMESTAMP,
+    end_time TEXT,
+    log_filename TEXT,
+    status TEXT DEFAULT 'active', -- 'active', 'closed'
+    FOREIGN KEY(application_id) REFERENCES applications(id) ON DELETE CASCADE
+  )`);
+
 
   // --- DOCUMENT AUTOMATION TABLES ---
 

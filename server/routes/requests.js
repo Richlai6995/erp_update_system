@@ -41,8 +41,8 @@ router.get('/options', verifyToken, (req, res) => {
         const formIds = db.prepare('SELECT DISTINCT form_id FROM applications ORDER BY form_id DESC').all();
         res.json({ form_ids: formIds.map(f => f.form_id) });
     } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: 'Failed to fetch options' });
+        console.error('[API Error] /api/requests/options failed:', e);
+        res.status(500).json({ error: 'Failed to fetch options', details: e.message });
     }
 });
 
@@ -301,8 +301,8 @@ router.get('/', verifyToken, (req, res) => {
         const rows = db.prepare(sql).all(params);
         res.json(rows);
     } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: 'Failed to fetch requests' });
+        console.error('[API Error] /api/requests search failed:', e);
+        res.status(500).json({ error: 'Failed to fetch requests', details: e.message });
     }
 });
 

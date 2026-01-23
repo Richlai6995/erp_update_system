@@ -98,22 +98,35 @@ module.exports = function (io) {
 
                 // 3. Start Terminal
                 try {
-                    const { ptyProcess, creds } = terminalService.createSession(socket.id, socket.user, requestDetail, { cols, rows });
+                    const { ptyProcess, creds } = await terminalService.createSession(socket.id, socket.user, requestDetail, { cols, rows });
 
                     ptyProcess.onData((data) => {
-                        // Security: Mask Password in Output
+                        // Security: Mask Password in Output and Log
                         let output = data;
-                        // Use a simple check first to avoid overhead
-                        if (output.includes(creds.password)) {
-                            // Replace all occurrences
+
+                        // Mask the specific CONNECT command (Case insensitive, handle potential split chunks aggressively)
+                        if (output.match(/CONNECT\s+.*\/.+@/i)) {
+                            output = output.replace(/CONNECT\s+.*\/.+@/ig, 'CONNECT ******@');
+                        } else if (output.includes(creds.password)) {
+                            // Fallback for simple matches
                             output = output.split(creds.password).join('******');
                         }
 
                         socket.emit('output', output);
-                        // Also write to log
+
+                        // Also write to log (MASKED content)
                         const session = terminalService.getSession(socket.id);
                         if (session && session.logStream) {
-                            session.logStream.write(data);
+                            // Clean up log output: Remove Clear Screen/Home codes causing blank space
+                            let logOutput = output
+                                .replace(/\x1b\[2J/g, '') // Remove Clear Screen
+                                .replace(/\x1b\[H/g, '')  // Remove Cursor Home
+                                .replace(/\x1b\[\?25[lh]/g, ''); // Remove Hide/Show Cursor
+
+                            // Collapse excessive newlines (3 or more -> 2)
+                            logOutput = logOutput.replace(/(\r\n|\n){3,}/g, '\r\n\r\n');
+
+                            session.logStream.write(logOutput);
                         }
                     });
 
@@ -148,6 +161,7 @@ module.exports = function (io) {
         });
 
         socket.on('input', (data) => {
+            // console.log(`[Terminal] Input from ${socket.user.username}: ${JSON.stringify(data)}`);
             terminalService.write(socket.id, data);
         });
 

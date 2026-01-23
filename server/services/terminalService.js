@@ -1,17 +1,20 @@
 const pty = require('node-pty');
 const path = require('path');
 const fs = require('fs');
+const dbWrapper = require('../database');
 require('dotenv').config();
 
 const DB_USERS_FILE = path.join(__dirname, '../config/db_users.json');
-const LOG_DIR = path.join(__dirname, '../../logs/terminals');
+// Fix: Use process.cwd() to Ensure mapping to /app/logs in Docker
+// In Docker, cwd is /app. So /app/logs/terminals.
+const LOG_DIR = path.join(process.cwd(), 'logs/terminals');
 
 // Ensure Log Directory
 if (!fs.existsSync(LOG_DIR)) {
     fs.mkdirSync(LOG_DIR, { recursive: true });
 }
 
-// Global Sessions Map: socketId -> { ptyProcess, logStream, requestInfo }
+// Global Sessions Map: socketId -> { ptyProcess, logStream, requestInfo, connectionLogId }
 const sessions = {};
 
 // Helper: Get DB Credentials
@@ -37,7 +40,7 @@ function getDBCredentials(targetUsername) {
 }
 
 class TerminalService {
-    createSession(socketId, userInfo, requestInfo, options = {}) {
+    async createSession(socketId, userInfo, requestInfo, options = {}) {
         const { access_db_user } = requestInfo;
         const { cols, rows } = options;
 
@@ -50,29 +53,36 @@ class TerminalService {
         const connectString = `//${process.env.ERP_DB_HOST}:${process.env.ERP_DB_PORT}/${process.env.ERP_DB_SERVICE_NAME}`;
 
         // Initialize SQL*Plus
-        // Use 'sqlplus /nolog' to avoid showing password in process list
-        // On Windows, use 'sqlplus.exe'
         let shell = process.env.SQLPLUS_PATH || (process.platform === 'win32' ? 'sqlplus.exe' : 'sqlplus');
 
-        // Sanity Check: If explicit path provided, check existence
         if (process.env.SQLPLUS_PATH && !fs.existsSync(shell)) {
             console.warn(`[TerminalService] Warning: Configured SQLPLUS_PATH (${shell}) does not exist. Falling back to default.`);
             shell = process.platform === 'win32' ? 'sqlplus.exe' : 'sqlplus';
         }
 
-        console.log(`[TerminalService] Spawning Shell: '${shell}'`);
+        // Revert to /nolog as per user request to avoid ORA-12560 and CLI argument issues
+        let spawnShell = shell;
+        let spawnArgs = ['/nolog'];
 
-        const ptyProcess = pty.spawn(shell, ['/nolog'], {
+        // Windows Fix: Force Code Page 65001 (UTF-8) to match NLS_LANG=.AL32UTF8
+        // This prevents garbled text (Mojibake) in xterm.js
+        if (process.platform === 'win32') {
+            spawnShell = 'cmd.exe';
+            spawnArgs = ['/c', `chcp 65001 > nul && ${shell} /nolog`];
+        }
+
+        const ptyProcess = pty.spawn(spawnShell, spawnArgs, {
             name: 'xterm-color',
             cols: cols || 80,
             rows: rows || 24,
             cwd: process.env.HOME || process.cwd(),
-            env: { ...process.env, NLS_LANG: 'TRADITIONAL CHINESE_TAIWAN.AL32UTF8' } // Force UTF8/Traditional Chinese
+            env: { ...process.env, NLS_LANG: 'TRADITIONAL CHINESE_TAIWAN.AL32UTF8' }
         });
 
         // Setup Logging
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logFile = path.join(LOG_DIR, `${requestInfo.id}_${userInfo.username}_${timestamp}.log`);
+        const filename = `${requestInfo.id}_${userInfo.username}_${timestamp}.log`;
+        const logFile = path.join(LOG_DIR, filename);
         const logStream = fs.createWriteStream(logFile, { flags: 'a' });
 
         // Log Header
@@ -82,19 +92,31 @@ class TerminalService {
         logStream.write(`Target DB User: ${access_db_user}\n`);
         logStream.write(`--------------------------------------------------\n`);
 
+        // DB Logging
+        let connectionLogId = null;
+        try {
+            const db = await dbWrapper.init();
+            const res = db.prepare(`
+                INSERT INTO connection_logs (application_id, user_id, username, log_filename, status)
+                VALUES (?, ?, ?, ?, 'active')
+            `).run(requestInfo.id, userInfo.id, userInfo.username, filename);
+            connectionLogId = res.lastInsertRowid;
+        } catch (e) {
+            console.error('[TerminalService] Failed to insert connection log:', e);
+        }
+
         // Store Session
         sessions[socketId] = {
             process: ptyProcess,
             logStream: logStream,
-            requestInfo: requestInfo
+            requestInfo: requestInfo,
+            connectionLogId: connectionLogId
         };
 
-        // Auto-Login
-        // Wait a small bit for prompt or just send it immediately
+        // Auto-Login (Deferred to hide password from initial command line, masked in socket)
         setTimeout(() => {
-            if (sessions[socketId]) { // Ensure session still exists
+            if (sessions[socketId]) {
                 ptyProcess.write(`CONNECT ${creds.username}/${creds.password}@${connectString}\r`);
-                // ptyProcess.write(`CLEAR SCREEN\r`); // Optional
             }
         }, 500);
 
@@ -108,9 +130,8 @@ class TerminalService {
     write(socketId, data) {
         const session = sessions[socketId];
         if (session && session.process) {
+            // console.log(`[TerminalService] Writing to pty: ${JSON.stringify(data)}`);
             session.process.write(data);
-            // We log input too if needed, but logging output is usually sufficient for audit
-            // session.logStream.write(`[INPUT] ${data}`); 
         }
     }
 
@@ -121,11 +142,24 @@ class TerminalService {
         }
     }
 
-    kill(socketId) {
+    async kill(socketId) {
         const session = sessions[socketId];
         if (session) {
+            // DB Update Closing
+            if (session.connectionLogId) {
+                try {
+                    const db = await dbWrapper.init();
+                    db.prepare(`
+                        UPDATE connection_logs 
+                        SET end_time = CURRENT_TIMESTAMP, status = 'closed' 
+                        WHERE id = ?
+                    `).run(session.connectionLogId);
+                } catch (e) {
+                    console.error('[TerminalService] Failed to update connection log:', e);
+                }
+            }
+
             if (session.process) {
-                // Exit cleanly if possible
                 try {
                     session.process.write('EXIT\r');
                     setTimeout(() => {
@@ -143,7 +177,6 @@ class TerminalService {
         }
     }
 
-    // Cleanup Check (e.g., if socket disconnects without kill)
     cleanup(socketId) {
         this.kill(socketId);
     }

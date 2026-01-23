@@ -70,6 +70,7 @@ const compileRoutes = require('./routes/compile');
 const departmentsRoutes = require('./routes/departments');
 const filesRoutes = require('./routes/files'); // Ensure this file exists, list_dir confirmed it
 const usersRoutes = require('./routes/users');
+const logsRoutes = require('./routes/logs');
 
 const publicApprovalRoutes = require('./routes/public_approval'); // New Public Approval
 
@@ -87,6 +88,7 @@ app.use('/api/oracle', oracleRoutes);
 app.use('/api/compile', compileRoutes);
 app.use('/api/departments', departmentsRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/logs', logsRoutes);
 app.use('/api/mail', require('./routes/mail'));
 app.use('/api/file-browser', require('./routes/fileBrowser'));
 app.use('/api/ai', require('./routes/ai'));

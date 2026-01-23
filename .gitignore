@@ -44,3 +44,6 @@ temp/
 tmp/
 debug_output.html
 excel_debug_log.txt
+
+# Deployment
+deploy_package/

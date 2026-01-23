@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+﻿import React, { useEffect, useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../lib/api';
@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/ui/Modal';
 import { DeploymentModal } from '../components/DeploymentModal';
 import CompilationModal from '../components/CompilationModal';
+import SQLPlusTerminalModal from '../components/SQLPlusTerminalModal';
 import { Terminal } from 'lucide-react';
 import { Reorder } from 'framer-motion';
 import DatePicker from 'react-datepicker';
@@ -37,6 +38,14 @@ interface FileItem {
 }
 interface DBObjectType { id: number; name: string; }
 interface ReviewLog { id: number; reviewer_name: string; action: string; comment: string; reviewed_at: string; }
+
+interface ConnectionLog {
+    id: number;
+    username: string;
+    start_time: string;
+    end_time: string | null;
+    status: string;
+}
 
 interface NewFileItem {
     file: File;
@@ -84,10 +93,16 @@ export default function RequestForm() {
     // Inputs for Actions
     const [reviewComment, setReviewComment] = useState('');
 
+    // Connection Log State
+    const [logs, setLogs] = useState<ConnectionLog[]>([]);
+    const [viewLogContent, setViewLogContent] = useState<string | null>(null);
+    const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+
     // UI State
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
     const [isCompileModalOpen, setIsCompileModalOpen] = useState(false);
+    const [isTerminalModalOpen, setIsTerminalModalOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
     const [isReadOnly, setIsReadOnly] = useState(false);
@@ -180,7 +195,33 @@ export default function RequestForm() {
 
             if (data.status !== 'draft' && data.status !== 'manager_rejected' && data.status !== 'dba_rejected') setIsReadOnly(true);
             else setIsReadOnly(false);
+
+            fetchLogs(reqId);
         } catch (e) { console.error(e); navigate('/requests'); }
+    };
+
+    const fetchLogs = async (reqId: string) => {
+        try {
+            const res = await api.get(`/logs/request/${reqId}`);
+            if (Array.isArray(res.data)) {
+                setLogs(res.data);
+            } else {
+                setLogs([]);
+                console.warn('Logs response is not an array:', res.data);
+            }
+        } catch (e) {
+            console.error("Failed to fetch logs", e);
+        }
+    };
+
+    const handleViewLog = async (logId: number) => {
+        try {
+            const res = await api.get(`/logs/${logId}/content`);
+            setViewLogContent(res.data);
+            setIsLogModalOpen(true);
+        } catch (e) {
+            alert('Failed to load log content');
+        }
     };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -537,6 +578,34 @@ export default function RequestForm() {
 
     return (
         <div className="max-w-4xl mx-auto p-6 pb-32">
+            {/* Log Viewer Modal */}
+            {isLogModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
+                        <div className="p-4 border-b flex justify-between items-center">
+                            <h3 className="text-xl font-bold">Terminal Log Content</h3>
+                            <button
+                                onClick={() => setIsLogModalOpen(false)}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+                        <div className="flex-1 p-4 overflow-auto bg-gray-900 text-gray-100 font-mono text-sm whitespace-pre-wrap">
+                            {viewLogContent || 'Loading...'}
+                        </div>
+                        <div className="p-4 border-t flex justify-end">
+                            <button
+                                onClick={() => setIsLogModalOpen(false)}
+                                className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* AI Analysis Modal */}
             <Modal
                 isOpen={isAiModalOpen}
@@ -726,8 +795,67 @@ export default function RequestForm() {
                     </div>
                 )}
 
-                {/* File Upload Section - Hide for Terminal Access */}
-                {programType !== 'Terminal Access' && (
+            </div>
+            {/* Connection History Section */}
+            {programType === 'Terminal Access' && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2">
+                        <Terminal className="w-5 h-5 text-slate-500" />
+                        Terminal Connection History (SQLPlus 連線紀錄)
+                        {(status === 'approved' || status === 'online') && (
+                            <Button
+                                className="ml-auto text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                                onClick={() => setIsTerminalModalOpen(true)}
+                            >
+                                <Terminal size={14} className="mr-2" /> 連線 (Connect SQLPlus)
+                            </Button>
+                        )}
+                    </h3>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left text-slate-500">
+                            <thead className="text-xs text-slate-700 uppercase bg-slate-50">
+                                <tr>
+                                    <th className="px-4 py-3">使用者 (User)</th>
+                                    <th className="px-4 py-3">開始時間 (Start Time)</th>
+                                    <th className="px-4 py-3">結束時間 (End Time)</th>
+                                    <th className="px-4 py-3">狀態 (Status)</th>
+                                    <th className="px-4 py-3">操作 (Action)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {logs.length > 0 ? logs.map((log) => (
+                                    <tr key={log.id} className="border-b hover:bg-slate-50">
+                                        <td className="px-4 py-3 font-medium text-slate-900">{log.username}</td>
+                                        {/* Fix: Treat backend timestamp as UTC by appending 'Z' before parsing */}
+                                        <td className="px-4 py-3">{new Date(log.start_time + 'Z').toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</td>
+                                        <td className="px-4 py-3">{log.end_time ? new Date(log.end_time + 'Z').toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }) : '-'}</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${log.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'}`}>
+                                                {log.status === 'active' ? '連線中 (Active)' : '已結束 (Closed)'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <button
+                                                onClick={() => handleViewLog(log.id)}
+                                                className="text-blue-600 hover:text-blue-800 hover:underline"
+                                            >
+                                                檢視紀錄 (View Log)
+                                            </button>
+                                        </td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan={5} className="px-4 py-3 text-center text-slate-400">尚無連線紀錄 (No connection history)</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {
+                programType !== 'Terminal Access' && (
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
                             <h3 className="font-semibold text-slate-800">程式檔案 (Files)</h3>
@@ -996,14 +1124,6 @@ export default function RequestForm() {
                                                     <span className="text-xs font-medium text-slate-700">已備份 (Backup Done)</span>
                                                 </label>
 
-                                                {/* Show buttons if Update, OR if user wants them available. User asked to "Add button", implying visibility. 
-                                                    Let's show them but maybe warn if not update? 
-                                                    Actually, standardized workflow usually implies backup for 'update'. 
-                                                    The user's prompt listing buttons suggests they should be there. 
-                                                    I'll output them always for DB Object to avoid "missing" confusion, 
-                                                    but they are most relevant for Update. 
-                                                 */}
-
                                                 <Button size="sm" variant="secondary" className="h-7 text-xs bg-white border border-slate-300 hover:bg-slate-50" onClick={() => handleAutoBackup(idx)}>
                                                     自動備份下載
                                                 </Button>
@@ -1029,10 +1149,6 @@ export default function RequestForm() {
                                                             onClick={async () => {
                                                                 // Use a temporary link to download? 
                                                                 // Or generic download route.
-                                                                // Since it's a temp file locally before save, we might need a dedicated temp download or just show name.
-                                                                // Backend returns `filePath`.
-                                                                // For now just alert or implementation properly if needed.
-                                                                // User asked for "Download and Delete".
                                                                 alert("請儲存後再從列表下載，或重新上傳");
                                                             }}
                                                             className="text-[10px] text-green-700 hover:underline cursor-pointer"
@@ -1063,10 +1179,12 @@ export default function RequestForm() {
                             )}
                         </div>
                     </div>
-                )}
+                )
+            }
 
-                {/* Rejection/DBA Comments Display */}
-                {(status === 'manager_rejected' || status === 'dba_rejected' || status === 'online') && (
+            {/* Rejection/DBA Comments Display */}
+            {
+                (status === 'manager_rejected' || status === 'dba_rejected' || status === 'online') && (
                     <div className={`p-4 rounded-lg space-y-2 border ${status === 'online' ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
                         <h3 className={`text-sm font-bold flex items-center gap-2 ${status === 'online' ? 'text-green-800' : 'text-red-800'}`}>
                             <MessageSquare size={16} />
@@ -1079,10 +1197,12 @@ export default function RequestForm() {
                                 (reviews.sort((a, b) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime()).find(r => r.action === 'reject')?.comment || '無退回原因')}
                         </div>
                     </div>
-                )}
+                )
+            }
 
-                {/* Reviewer Action Area: Comment Input */}
-                {status === 'reviewing' && canApprove && (
+            {/* Reviewer Action Area: Comment Input */}
+            {
+                status === 'reviewing' && canApprove && (
                     <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg space-y-2">
                         <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
                             <Edit3 size={16} /> 簽核意見 (Review Comment)
@@ -1094,9 +1214,11 @@ export default function RequestForm() {
                             onChange={e => setReviewComment(e.target.value)}
                         />
                     </div>
-                )}
-                {/* DBA Action Area: Comment Input */}
-                {status === 'approved' && (user?.role === 'admin' || user?.role === 'dba') && (
+                )
+            }
+            {/* DBA Action Area: Comment Input */}
+            {
+                status === 'approved' && (user?.role === 'admin' || user?.role === 'dba') && (
                     <div className="p-4 bg-purple-50 border border-purple-100 rounded-lg space-y-2">
                         <h3 className="text-sm font-bold text-purple-800 flex items-center gap-2">
                             <Edit3 size={16} /> 上線回覆 / DBA 意見
@@ -1108,190 +1230,135 @@ export default function RequestForm() {
                             onChange={e => setReviewComment(e.target.value)}
                         />
                     </div>
+                )
+            }
+            {/* Footer Actions */}
+            <div className="mt-8 flex justify-end gap-4 border-t pt-6">
+                {/* Draft/Rejected: Save & Submit */}
+                {(status === 'draft' || status === 'manager_rejected' || status === 'dba_rejected') && !isReadOnly && (
+                    <>
+                        <Button variant="secondary" onClick={() => handleSaveOrSubmit('save')} disabled={isLoading}>
+                            <Save size={16} className="mr-2" /> 暫存 (Save)
+                        </Button>
+                        <Button onClick={() => handleSaveOrSubmit('submit')} disabled={isLoading}>
+                            <Send size={16} className="mr-2" /> 送出簽核 (Submit)
+                        </Button>
+                    </>
                 )}
 
-            </div>
-
-            {/* Footer Actions */}
-            <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-                <div className={`max-w-4xl mx-auto flex items-center ${(status === 'approved' && programType === 'Terminal Access' && (isApplicant || isAdmin)) ? 'justify-center' : 'justify-end'} gap-3`}>
-                    {(['draft', 'manager_rejected', 'dba_rejected'].includes(status) && id) && (
-                        <Button
-                            variant="danger"
-                            className="bg-red-50 text-red-600 hover:bg-red-100 border-red-200 mr-auto"
-                            onClick={async () => {
-                                if (confirm('確定要作廢此申請單嗎? 作廢後將無法恢復。')) {
-                                    await handleReviewAction('void' as any);
-                                }
-                            }}
-                        >
-                            作廢 (Void)
+                {/* Reviewing & Can Approve: Approve/Reject */}
+                {status === 'reviewing' && canApprove && (
+                    <>
+                        <Button variant="danger" onClick={() => handleReviewAction('reject')} disabled={isLoading}>
+                            <ThumbsDown size={16} className="mr-2" /> 退回 (Reject)
                         </Button>
-                    )}
+                        <Button variant="primary" onClick={() => handleReviewAction('approve')} disabled={isLoading}>
+                            <ThumbsUp size={16} className="mr-2" /> 核准 (Approve)
+                        </Button>
+                    </>
+                )}
 
-                    {!isReadOnly && (
-                        <>
-                            <Button variant="secondary" onClick={() => handleSaveOrSubmit('save')} isLoading={isLoading}>
-                                <Save size={16} className="mr-2" /> 暫存 (Save)
-                            </Button>
-                            <Button onClick={() => handleSaveOrSubmit('submit')} isLoading={isLoading}>
-                                <Send size={16} className="mr-2" /> 送出簽核 (Submit)
-                            </Button>
-                        </>
-                    )}
-
-                    {status === 'reviewing' && canApprove && (
-                        <>
-                            <Button variant="danger" onClick={() => handleReviewAction('reject')} isLoading={isLoading}>
-                                <ThumbsDown size={16} className="mr-2" /> 退回 (Reject)
-                            </Button>
-                            <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleReviewAction('approve')} isLoading={isLoading}>
-                                <ThumbsUp size={16} className="mr-2" /> 同意 (Approve)
-                            </Button>
-                        </>
-                    )}
-
-                    {status === 'approved' && (user?.role === 'admin' || user?.role === 'dba') && (
-                        <>
-                            <Button variant="danger" onClick={() => handleReviewAction('reject')} isLoading={isLoading} className="bg-red-50 text-red-600 hover:bg-red-100 border-red-200">
-                                <ThumbsDown size={16} className="mr-2" /> 退回 (Reject)
-                            </Button>
-
-                            {/* Normal Workflow Buttons */}
-                            {programType !== 'Terminal Access' && (
-                                <>
-                                    {(programType === 'Form' || programType === 'Library') && (
-                                        <Button className="text-white hover:opacity-90" style={{ backgroundColor: '#daa520' }} onClick={() => setIsCompileModalOpen(true)}>
-                                            <Terminal size={16} className="mr-2" /> 程式編譯 (Compile)
-                                        </Button>
-                                    )}
-                                    <Button className="text-white hover:opacity-90" style={{ backgroundColor: '#1e90ff' }} onClick={() => setIsDeployModalOpen(true)}>
-                                        <UploadCloud size={16} className="mr-2" /> 程式佈署 (Deploy)
-                                    </Button>
-                                    <Button className="text-white hover:opacity-90" style={{ backgroundColor: '#00ced1' }} onClick={() => handleReviewAction('online')} isLoading={isLoading}>
-                                        <Globe size={16} className="mr-2" /> DBA 上線 (Online)
-                                    </Button>
-                                </>
-                            )}
-
-                            {/* Terminal Access DBA Button */}
-                            {programType === 'Terminal Access' && (
-                                <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleReviewAction('online')} isLoading={isLoading}>
-                                    <Plug size={16} className="mr-2" /> 允許連線 (Allow Connection)
+                {/* Approved (DBA): Online/Reject */}
+                {status === 'approved' && (user?.role === 'admin' || user?.role === 'dba') && (
+                    <>
+                        <Button variant="danger" onClick={() => handleReviewAction('reject')} disabled={isLoading}>
+                            <ThumbsDown size={16} className="mr-2" /> 退回 (Reject)
+                        </Button>
+                        {programType !== 'Terminal Access' && (
+                            <>
+                                <Button variant="secondary" onClick={() => setIsCompileModalOpen(true)} disabled={isLoading}>
+                                    <Plug size={16} className="mr-2" /> 編譯 (Compile)
                                 </Button>
-                            )}
-                        </>
-                    )}
-
-                    {/* Applicant Actions: Start Connection */}
-                    {/* Applicant Actions: Start Connection */}
-                    {(() => { console.log('[Debug Terminal Btn]', { status, programType, isApplicant, isAdmin, id }); return null; })()}
-                    {(status === 'approved' || status === 'online') && programType === 'Terminal Access' && (isApplicant || isAdmin) && (
-                        <Button
-                            onClick={() => {
-                                const now = new Date();
-                                const start = accessStartTime ? new Date(accessStartTime) : null;
-                                const end = accessEndTime ? new Date(accessEndTime) : null;
-
-                                if (start && now < start) {
-                                    return alert(`未到達開放時間 (Not yet started)\n開放時間: ${start.toLocaleString()}`);
-                                }
-                                if (end && now > end) {
-                                    return alert(`已超過開放時間 (Expired)\n結束時間: ${end.toLocaleString()}`);
-                                }
-
-                                window.open(`/terminal/${id}`, '_blank');
-                            }}
-                            className="bg-black hover:bg-slate-800 text-white"
-                        >
-                            <Terminal size={16} className="mr-2" /> 啟動連線 (Start Connection)
+                                <Button variant="secondary" onClick={() => setIsDeployModalOpen(true)} disabled={isLoading}>
+                                    <UploadCloud size={16} className="mr-2" /> 佈署 (Deploy)
+                                </Button>
+                            </>
+                        )}
+                        <Button variant="primary" onClick={() => handleReviewAction('online')} disabled={isLoading}>
+                            <Globe size={16} className="mr-2" /> {programType === 'Terminal Access' ? '權限設定完成 (Grant Access)' : '確認上線 (Online)'}
                         </Button>
-                    )}
-                </div>
+                    </>
+                )}
             </div>
 
             {/* Review Status Modal */}
             <Modal
                 isOpen={isReviewModalOpen}
                 onClose={() => setIsReviewModalOpen(false)}
-                title="簽核狀態詳細資訊"
-                className="max-w-2xl"
+                title="簽核狀態 (Review Status)"
             >
-                <div>
-                    <div className="bg-slate-50 p-4 rounded-lg text-sm text-slate-600 mb-4">
-                        目前狀態: <span className="font-bold text-brand-600">{getStatusLabel(status)}</span>
+                <div className="space-y-4">
+                    <div className="relative pl-4 border-l-2 border-slate-200 space-y-6">
+                        {sortedReviews.map((review, index) => (
+                            <div key={index} className="relative">
+                                <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full bg-slate-200 border-2 border-white"></div>
+                                <div className="text-sm">
+                                    <span className="font-bold text-slate-900">{review.reviewer_name}</span>
+                                    <span className="text-slate-500 ml-2">{new Date(review.reviewed_at).toLocaleString()}</span>
+                                </div>
+                                <div className={`mt-1 text-sm font-medium ${review.action === 'approve' ? 'text-green-600' : 'text-red-600'}`}>
+                                    {review.action === 'approve' ? '核准 (Approved)' : '退回 (Rejected)'}
+                                </div>
+                                {review.comment && (
+                                    <div className="mt-1 text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                                        {review.comment}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                        {sortedReviews.length === 0 && <div className="text-sm text-slate-400">尚無簽核紀錄</div>}
                     </div>
-                    <div className="border rounded-lg overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-100 border-b text-slate-600">
-                                <tr>
-                                    <th className="px-4 py-2 w-16">序號</th>
-                                    <th className="px-4 py-2 whitespace-nowrap">簽核主管</th>
-                                    <th className="px-4 py-2 whitespace-nowrap">結果</th>
-                                    <th className="px-4 py-2">意見</th>
-                                    <th className="px-4 py-2 whitespace-nowrap">日期</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {sortedReviews.map((log, index) => (
-                                    <tr key={log.id}>
-                                        <td className="px-4 py-2 text-center text-slate-500">{index + 1}</td>
-                                        <td className="px-4 py-2 font-medium whitespace-nowrap">{log.reviewer_name}</td>
-                                        <td className="px-4 py-2 whitespace-nowrap">{log.action === 'approve' ? '同意' : log.action === 'reject' ? '退回' : log.action}</td>
-                                        <td className="px-4 py-2 min-w-[200px] max-w-[300px] break-all">{log.comment}</td>
-                                        <td className="px-4 py-2 text-xs whitespace-nowrap">{new Date(log.reviewed_at).toLocaleString()}</td>
-                                    </tr>
-                                ))}
-                                {sortedReviews.length === 0 && <tr><td colSpan={5} className="p-4 text-center">尚無紀錄</td></tr>}
-                            </tbody>
-                        </table>
+                    <div className="flex justify-end">
+                        <Button variant="secondary" onClick={() => setIsReviewModalOpen(false)}>關閉</Button>
                     </div>
                 </div>
             </Modal>
 
-            {/* DeploymentModal */}
+            {/* Deployment Modal */}
+            {/* Deployment Modal */}
             <DeploymentModal
                 isOpen={isDeployModalOpen}
                 onClose={() => setIsDeployModalOpen(false)}
-                requestId={id}
-                onComplete={() => {
-                    if (id) fetchRequest(id);
-                }}
+                requestId={id!}
             />
 
             {/* Compilation Modal */}
             <CompilationModal
                 isOpen={isCompileModalOpen}
                 onClose={() => setIsCompileModalOpen(false)}
+                requestId={id!}
+                {...({ fileList: existingFiles } as any)}
+            />
+
+            {/* SQLPlus Terminal Modal */}
+            <SQLPlusTerminalModal
+                isOpen={isTerminalModalOpen}
+                onClose={() => {
+                    setIsTerminalModalOpen(false);
+                    fetchLogs(id!); // Refresh logs
+                }}
                 requestId={Number(id)}
-                files={existingFiles}
-                onSuccess={() => { if (id) fetchRequest(id); }}
+                dbUser={accessDbUser || 'apps'}
             />
 
             {/* Copy Request Modal */}
             <Modal
                 isOpen={isCopyModalOpen}
                 onClose={() => setIsCopyModalOpen(false)}
-                title="從舊單據複製 (Copy From Request)"
-                footer={
-                    <>
-                        <Button variant="ghost" onClick={() => setIsCopyModalOpen(false)}>取消</Button>
-                        <Button onClick={handleCopyRequest} isLoading={isLoading}>確認複製</Button>
-                    </>
-                }
+                title="複製舊單據 (Copy Request)"
             >
-                <div className="space-y-4">
-                    <p className="text-sm text-slate-600">
-                        請選擇要複製的來源單據單號。系統將會複製該單據的模組、類別、說明等欄位。
+                <div>
+                    <p className="text-sm text-slate-500 mb-4">
+                        請選擇要複製的單據編號。複製後將自動帶入該單據的模組、類別、說明等欄位。
                         <br />
-                        <span className="text-red-500 text-xs">注意: 檔案清單、簽核紀錄與 DBA 回覆將不會被複製。</span>
+                        <span className="text-red-500 text-xs">注意: 檔案與簽核紀錄不會被複製。</span>
                     </p>
                     <div className="space-y-1">
-                        <label className="text-sm font-medium text-slate-700">來源單據單號</label>
+                        <label className="text-sm font-medium text-slate-700">選擇來源單據</label>
                         <input
                             list="copy_options"
                             className="w-full px-3 py-2 border rounded text-sm"
-                            placeholder="請輸入單號或選擇..."
+                            placeholder="請輸入或選擇單據編號..."
                             value={copyFormId}
                             onChange={e => setCopyFormId(e.target.value)}
                         />
@@ -1299,8 +1366,13 @@ export default function RequestForm() {
                             {copyOptions.map(opt => <option key={opt} value={opt} />)}
                         </datalist>
                     </div>
+                    <div className="mt-6 flex justify-end gap-2">
+                        <Button variant="secondary" onClick={() => setIsCopyModalOpen(false)}>取消</Button>
+                        <Button onClick={handleCopyRequest}>確認複製</Button>
+                    </div>
                 </div>
             </Modal>
-        </div>
+
+        </div >
     );
 }

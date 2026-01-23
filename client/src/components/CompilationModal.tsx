@@ -7,7 +7,7 @@ interface CompilationModalProps {
     isOpen: boolean;
     onClose: () => void;
     requestId: number;
-    files: any[];
+    fileList: any[];
     onSuccess?: () => void;
 }
 
@@ -20,7 +20,7 @@ interface LogEntry {
 
 type CompilationStatus = 'idle' | 'compiling' | 'success' | 'error';
 
-export default function CompilationModal({ isOpen, onClose, requestId, files, onSuccess }: CompilationModalProps) {
+export default function CompilationModal({ isOpen, onClose, requestId, fileList, onSuccess }: CompilationModalProps) {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [status, setStatus] = useState<CompilationStatus>('idle');
     const logsEndRef = useRef<HTMLDivElement>(null);
@@ -76,7 +76,7 @@ export default function CompilationModal({ isOpen, onClose, requestId, files, on
 
     if (!isOpen) return null;
 
-    const hasCompilableFiles = files.some(f =>
+    const hasCompilableFiles = fileList.some(f =>
         f.original_name.toLowerCase().endsWith('.fmb') ||
         f.original_name.toLowerCase().endsWith('.pll')
     );
