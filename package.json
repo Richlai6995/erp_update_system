@@ -1,14 +1,19 @@
 {
-    "name": "cloud-file-management-system",
-    "version": "1.0.0",
-    "scripts": {
-        "install:all": "npm install && cd client && npm install && cd ../server && npm install",
-        "dev": "concurrently \"npm run server\" \"npm run client\"",
-        "server": "cd server && npm run dev",
-        "client": "cd client && npm run dev",
-        "start": "npm run dev"
-    },
-    "devDependencies": {
-        "concurrently": "^8.2.0"
-    }
+  "name": "cloud-file-management-system",
+  "version": "1.0.0",
+  "scripts": {
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "start": "npm run dev",
+    "test:server": "cd server && npm run test",
+    "test:client": "cd client && npm run test",
+    "test": "concurrently \"npm run test:server\" \"npm run test:client\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "husky": "^9.1.7"
+  }
 }

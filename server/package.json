@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "cross-env NODE_ENV=test jest"
   },
   "keywords": [],
   "author": "",
@@ -39,5 +40,10 @@
     "ssh2-sftp-client": "^12.0.1",
     "uuid": "^9.0.1",
     "xlsx": "^0.20.3"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "jest": "^30.2.0",
+    "supertest": "^7.2.2"
   }
 }

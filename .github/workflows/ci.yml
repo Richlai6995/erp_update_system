@@ -1,0 +1,41 @@
+name: ERA Update System CI
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master", "develop" ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: Install Dependencies
+      run: |
+        npm install
+        cd client && npm install
+        cd ../server && npm install
+        
+    - name: Run Server Tests
+      run: |
+        cd server
+        npm test
+        
+    - name: Run Client Tests
+      run: |
+        cd client
+        npm test
