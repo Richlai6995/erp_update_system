@@ -7,11 +7,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3000',
+        target: 'http://127.0.0.1:3003',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'ws://127.0.0.1:3000',
+        target: 'ws://127.0.0.1:3003',
         ws: true,
       }
     },

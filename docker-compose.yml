@@ -31,8 +31,8 @@ services:
       - BACKUP_FILES_DIR=/app/backups
       # Override SQLPLUS_PATH for Linux Container (Windows path in .env will break it)
       - SQLPLUS_PATH=sqlplus
-    env_file:
-      - server/.env
+    # env_file:
+    #   - server/.env
     # Override default CMD because volume mount changes file structure
     command: node server.js
     restart: unless-stopped

@@ -96,7 +96,7 @@ router.get('/export', verifyToken, async (req, res) => {
         }
         if (end_date) {
             sql += ` AND a.apply_date <= ? `;
-            params.push(end_date);
+            params.push(end_date + 'T23:59:59.999');
         }
         if (applicant) {
             sql += ` AND u.name LIKE ? `;
@@ -238,7 +238,6 @@ router.get('/', verifyToken, (req, res) => {
 
     const params = [];
 
-
     // Filter by User Role - REMOVED to allow global visibility
 
     // if (req.user.role === 'user') {
@@ -261,7 +260,7 @@ router.get('/', verifyToken, (req, res) => {
     }
     if (end_date) {
         sql += ` AND a.apply_date <= ? `;
-        params.push(end_date); // Assuming end_date logic handles inclusive/exclusive as needed, simplified here
+        params.push(end_date + 'T23:59:59.999'); // Make end date inclusive with ISO string match
     }
 
     // 3. Applicant Name
@@ -296,6 +295,9 @@ router.get('/', verifyToken, (req, res) => {
     }
 
     sql += ` ORDER BY a.created_at DESC`;
+
+    console.log('[Search] SQL:', sql);
+    console.log('[Search] Params:', params);
 
     try {
         const rows = db.prepare(sql).all(params);

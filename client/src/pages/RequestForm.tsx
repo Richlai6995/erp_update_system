@@ -227,15 +227,20 @@ export default function RequestForm() {
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
             const added: NewFileItem[] = [];
-            Array.from(e.target.files).forEach(f => added.push({
-                file: f,
-                description: '',
-                versionType: 'update',
-                dbObjectType: '', // Default empty, user must choose if DB Object
-                dbObjectName: '',
-                dbSchemaName: '',
-                isBackup: false
-            }));
+            Array.from(e.target.files).forEach(f => {
+                // Auto-extract filename without extension for Object Name
+                const nameWithoutExt = f.name.substring(0, f.name.lastIndexOf('.')) || f.name;
+
+                added.push({
+                    file: f,
+                    description: '',
+                    versionType: 'update',
+                    dbObjectType: '', // Default empty
+                    dbObjectName: nameWithoutExt, // Auto-fill here
+                    dbSchemaName: '',
+                    isBackup: false
+                });
+            });
             setNewFiles([...newFiles, ...added]);
         }
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1288,25 +1293,31 @@ export default function RequestForm() {
                 title="簽核狀態 (Review Status)"
             >
                 <div className="space-y-4">
-                    <div className="relative pl-4 border-l-2 border-slate-200 space-y-6">
+                    <div className="space-y-3">
                         {sortedReviews.map((review, index) => (
-                            <div key={index} className="relative">
-                                <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full bg-slate-200 border-2 border-white"></div>
-                                <div className="text-sm">
-                                    <span className="font-bold text-slate-900">{review.reviewer_name}</span>
-                                    <span className="text-slate-500 ml-2">{new Date(review.reviewed_at).toLocaleString()}</span>
+                            <div key={index} className="flex gap-4 p-4 border rounded-lg bg-white shadow-sm">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-600">
+                                    {index + 1}
                                 </div>
-                                <div className={`mt-1 text-sm font-medium ${review.action === 'approve' ? 'text-green-600' : 'text-red-600'}`}>
-                                    {review.action === 'approve' ? '核准 (Approved)' : '退回 (Rejected)'}
-                                </div>
-                                {review.comment && (
-                                    <div className="mt-1 text-sm text-slate-600 bg-slate-50 p-2 rounded">
-                                        {review.comment}
+                                <div className="flex-1">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <div className="font-bold text-slate-900">{review.reviewer_name}</div>
+                                            <div className="text-xs text-slate-500 mt-1">{new Date(review.reviewed_at).toLocaleString()}</div>
+                                        </div>
+                                        <div className={`px-2 py-1 rounded text-xs font-bold ${review.action === 'approve' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                            {review.action === 'approve' ? '核准' : '退回'}
+                                        </div>
                                     </div>
-                                )}
+                                    {review.comment && (
+                                        <div className="mt-2 text-sm text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
+                                            {review.comment}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         ))}
-                        {sortedReviews.length === 0 && <div className="text-sm text-slate-400">尚無簽核紀錄</div>}
+                        {sortedReviews.length === 0 && <div className="text-center text-slate-400 py-8">尚無簽核紀錄</div>}
                     </div>
                     <div className="flex justify-end">
                         <Button variant="secondary" onClick={() => setIsReviewModalOpen(false)}>關閉</Button>
