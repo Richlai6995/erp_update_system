@@ -243,6 +243,11 @@ const createSession = (res, user) => {
     res.json({ token, user: userWithoutPassword });
 };
 
+// GET Current User
+router.get('/me', verifyToken, (req, res) => {
+    res.json(req.user);
+});
+
 // ... LOGOUT ...
 
 // Middleware to verify token
